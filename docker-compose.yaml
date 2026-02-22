@@ -1,0 +1,15 @@
+sources:
+  - name: "terraform"
+    type: "file"
+    path: "/tmp/tf-debug.log"
+    follow: true
+    parser: "json"
+  - name: "go-app"
+    type: "docker"
+    container: "myapp"
+    parser: "logfmt"
+
+global:
+  level: "INFO"
+  regex: ""
+  output: "console"
