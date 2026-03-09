@@ -3,7 +3,7 @@
   "info": {
     "title": "Logtailr API",
     "description": "REST API for the Logtailr concurrent multi-source log aggregator. Provides health monitoring, source status, configuration inspection, Prometheus metrics, and real-time log streaming via WebSocket.",
-    "version": "0.5.0",
+    "version": "0.8.0",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -117,6 +117,42 @@
             "content": {
               "text/plain": {
                 "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts": {
+      "get": {
+        "operationId": "getAlerts",
+        "summary": "Recent alert events",
+        "description": "Returns recent alert events fired by the alert engine, including rule name, severity, message, and timestamp.",
+        "tags": ["Alerts"],
+        "responses": {
+          "200": {
+            "description": "List of alert events",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlertEventList" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/rules": {
+      "get": {
+        "operationId": "getAlertRules",
+        "summary": "Configured alert rules",
+        "description": "Returns all configured alert rules with their fire count and last fired timestamp.",
+        "tags": ["Alerts"],
+        "responses": {
+          "200": {
+            "description": "List of alert rules",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlertRuleList" }
               }
             }
           }
@@ -312,6 +348,92 @@
           "show_health": { "type": "boolean" }
         }
       },
+      "AlertEventList": {
+        "type": "object",
+        "required": ["alerts", "total"],
+        "properties": {
+          "alerts": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AlertEvent" }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total number of alert events returned"
+          }
+        }
+      },
+      "AlertRuleList": {
+        "type": "object",
+        "required": ["rules"],
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AlertRule" }
+          }
+        }
+      },
+      "AlertEvent": {
+        "type": "object",
+        "required": ["rule", "severity", "message", "timestamp"],
+        "description": "A fired alert event",
+        "properties": {
+          "rule": {
+            "type": "string",
+            "description": "Name of the rule that fired"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "message": {
+            "type": "string",
+            "description": "Alert message describing what triggered"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "description": "Source name (present for health_change alerts)"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Error count (present for error_rate alerts)"
+          }
+        }
+      },
+      "AlertRule": {
+        "type": "object",
+        "required": ["name", "type", "severity", "enabled"],
+        "description": "A configured alert rule with runtime stats",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Rule name as defined in config"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["pattern", "level", "error_rate", "health_change"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "fire_count": {
+            "type": "integer",
+            "description": "Number of times this rule has fired"
+          },
+          "last_fired": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last fire (omitted if never fired)"
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "required": ["error"],
@@ -328,6 +450,7 @@
     { "name": "Health", "description": "Health monitoring endpoints" },
     { "name": "Config", "description": "Configuration inspection" },
     { "name": "Metrics", "description": "Prometheus metrics export" },
+    { "name": "Alerts", "description": "Alert engine events and rules" },
     { "name": "WebSocket", "description": "Real-time log streaming" }
   ]
 }
