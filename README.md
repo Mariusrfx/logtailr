@@ -6,12 +6,12 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 
 ## Features
 
-- **Multi-source tailing** — Files, Docker containers, journalctl units, stdin pipes
+- **Multi-source tailing** — Files, Docker containers (with auto-reconnect), journalctl units, stdin pipes
 - **Multi-format parser** — JSON, logfmt, and plain text with auto-detection
 - **Level filtering** — Filter by severity: `debug < info < warn < error < fatal`
 - **Regex filtering** — Match log messages with regular expressions
 - **Real-time file tailing** — Follow files with fsnotify, handles log rotation
-- **Multiple outputs** — Console (colored), JSON (NDJSON), file, OpenSearch/Elasticsearch, webhooks
+- **Multiple outputs** — Console (colored), JSON (NDJSON), file (with size rotation, compression, and age cleanup), OpenSearch/Elasticsearch, webhooks
 - **Health monitoring** — Track source status (healthy/degraded/failed/stopped)
 - **REST API** — Health endpoints, config inspection, Prometheus metrics
 - **WebSocket streaming** — Real-time log streaming with level/source filters
@@ -85,7 +85,7 @@ logtailr tail --config config.yaml
 | Type | Config field | Description |
 |------|-------------|-------------|
 | `file` | `path` | Local log file, supports follow and log rotation |
-| `docker` | `container` | Docker container logs via `docker logs` |
+| `docker` | `container` | Docker container logs via `docker logs`, auto-reconnects on restart |
 | `journalctl` | `unit` | Systemd journal via `journalctl -u` |
 | `stdin` | — | Read from pipe (auto-detected or via config) |
 
@@ -115,6 +115,19 @@ Outputs one JSON object per line (NDJSON), suitable for piping to `jq`.
 ```bash
 logtailr tail --file app.log --output file --output-path errors.log
 ```
+
+With rotation via config file:
+
+```yaml
+outputs:
+  file:
+    path: "/var/log/logtailr/output.log"
+    max_size: "50MB"     # Rotate when file exceeds this size
+    max_age: "168h"      # Delete rotated files older than 7 days
+    compress: true        # Gzip rotated files
+```
+
+Rotated files are named with a timestamp: `output.log.2026-03-09T10-30-00.gz`.
 
 ### OpenSearch / Elasticsearch
 

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-09
+
+### Added
+- **Docker auto-reconnect**: DockerTailer now automatically reconnects when a container stops or restarts, using exponential backoff (1s–30s). Reports degraded status during reconnection and healthy on success. Reconnection continues until the context is cancelled.
+- **File output rotation**: FileWriter supports size-based rotation via `WithMaxSize()`. Rotated files are renamed with a timestamp suffix (e.g. `app.log.2026-03-09T10-30-00`). Optional gzip compression of rotated files with `WithCompress()`. Automatic cleanup of rotated files older than `WithMaxAge()`.
+- **File output YAML config**: New `outputs.file` config section with `path`, `max_size` (human-readable: `10MB`, `500KB`, `1GB`), `max_age` (duration), and `compress` (bool)
+- **Config validation**: File output path required, `max_size` parsed and validated, `max_age` validated as duration
+
 ## [0.6.0] - 2026-03-09
 
 ### Added

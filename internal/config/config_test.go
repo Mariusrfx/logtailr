@@ -357,6 +357,85 @@ func TestValidateConfig_AlertsDisabledSkipsValidation(t *testing.T) {
 	}
 }
 
+func TestParseByteSize(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int64
+	}{
+		{"100B", 100},
+		{"10KB", 10 * 1024},
+		{"5MB", 5 * 1024 * 1024},
+		{"1GB", 1024 * 1024 * 1024},
+		{"1024", 1024},
+		{"  50 MB ", 50 * 1024 * 1024},
+		{"10kb", 10 * 1024},
+	}
+
+	for _, tt := range tests {
+		got, err := ParseByteSize(tt.input)
+		if err != nil {
+			t.Errorf("ParseByteSize(%q) error = %v", tt.input, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("ParseByteSize(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseByteSize_Invalid(t *testing.T) {
+	invalids := []string{"", "0MB", "-10MB", "abc", "10XB"}
+	for _, s := range invalids {
+		if _, err := ParseByteSize(s); err == nil {
+			t.Errorf("ParseByteSize(%q) expected error", s)
+		}
+	}
+}
+
+func TestValidateConfig_FileOutput(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Outputs = OutputsConfig{
+		File: &FileOutputConfig{
+			Path:    "/var/log/output.log",
+			MaxSize: "10MB",
+			MaxAge:  "72h",
+		},
+	}
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+}
+
+func TestValidateConfig_FileOutputNoPath(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Outputs = OutputsConfig{
+		File: &FileOutputConfig{MaxSize: "10MB"},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for file output without path")
+	}
+}
+
+func TestValidateConfig_FileOutputInvalidMaxSize(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Outputs = OutputsConfig{
+		File: &FileOutputConfig{Path: "/a.log", MaxSize: "not-a-size"},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid max_size")
+	}
+}
+
+func TestValidateConfig_FileOutputInvalidMaxAge(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Outputs = OutputsConfig{
+		File: &FileOutputConfig{Path: "/a.log", MaxAge: "not-a-duration"},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid max_age")
+	}
+}
+
 func TestLoadConfig_Defaults(t *testing.T) {
 	path := writeConfigFile(t, `
 sources:

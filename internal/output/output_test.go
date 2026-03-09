@@ -245,6 +245,222 @@ func TestFileWriter_InvalidPath(t *testing.T) {
 	}
 }
 
+// --- FileWriter rotation tests ---
+
+func TestFileWriter_RotateBySize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+
+	// MaxSize of 100 bytes — each line is ~55 bytes, so 2nd line triggers rotation
+	fw, err := NewFileWriter(path, WithMaxSize(100))
+	if err != nil {
+		t.Fatalf("NewFileWriter() error = %v", err)
+	}
+
+	if err := fw.Write(newTestLine("info", "first line of log output")); err != nil {
+		t.Fatalf("Write(1) error = %v", err)
+	}
+	if err := fw.Write(newTestLine("error", "second line triggers rotation")); err != nil {
+		t.Fatalf("Write(2) error = %v", err)
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// The current file should contain only the second line
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read current file: %v", err)
+	}
+	if !strings.Contains(string(content), "second line") {
+		t.Errorf("current file should have second line, got: %q", string(content))
+	}
+	if strings.Contains(string(content), "first line") {
+		t.Errorf("current file should NOT have first line after rotation")
+	}
+
+	// A rotated file should exist
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	rotatedCount := 0
+	for _, e := range entries {
+		if e.Name() != "app.log" {
+			rotatedCount++
+			rotatedContent, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatalf("read rotated file: %v", err)
+			}
+			if !strings.Contains(string(rotatedContent), "first line") {
+				t.Errorf("rotated file should have first line, got: %q", string(rotatedContent))
+			}
+		}
+	}
+	if rotatedCount == 0 {
+		t.Error("expected at least one rotated file")
+	}
+}
+
+func TestFileWriter_RotatedFileExists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "output.log")
+
+	fw, err := NewFileWriter(path, WithMaxSize(50))
+	if err != nil {
+		t.Fatalf("NewFileWriter() error = %v", err)
+	}
+
+	// Write enough to trigger rotation
+	if err := fw.Write(newTestLine("info", "a]line that is long enough to exceed limit")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Write(newTestLine("info", "post rotation line")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+
+	// Should have original + at least 1 rotated
+	if len(entries) < 2 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("expected at least 2 files, got %d: %v", len(entries), names)
+	}
+
+	// Rotated file should have a timestamp pattern
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "output.log.") {
+			// Verify timestamp format in name: output.log.YYYY-MM-DDTHH-MM-SS
+			suffix := strings.TrimPrefix(e.Name(), "output.log.")
+			if len(suffix) < 19 {
+				t.Errorf("rotated file name has unexpected format: %q", e.Name())
+			}
+			return
+		}
+	}
+	t.Error("no rotated file with timestamp suffix found")
+}
+
+func TestFileWriter_Compress(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+
+	fw, err := NewFileWriter(path, WithMaxSize(50), WithCompress())
+	if err != nil {
+		t.Fatalf("NewFileWriter() error = %v", err)
+	}
+
+	if err := fw.Write(newTestLine("info", "line long enough to trigger rotation")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Write(newTestLine("info", "after rotation")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// Give compression goroutine time to finish
+	time.Sleep(500 * time.Millisecond)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".gz") {
+			// Verify it's a valid gzip file
+			info, err := e.Info()
+			if err != nil {
+				t.Fatalf("stat .gz file: %v", err)
+			}
+			if info.Size() == 0 {
+				t.Error(".gz file is empty")
+			}
+			return
+		}
+	}
+	t.Error("no .gz compressed file found")
+}
+
+func TestFileWriter_MaxAge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+
+	// Create a fake old rotated file
+	oldFile := filepath.Join(dir, "app.log.2020-01-01T00-00-00")
+	if err := os.WriteFile(oldFile, []byte("old data"), 0600); err != nil {
+		t.Fatalf("create old file: %v", err)
+	}
+	// Set its mod time to the past
+	oldTime := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	// maxAge of 1 hour — the old file should be cleaned up after rotation
+	fw, err := NewFileWriter(path, WithMaxSize(50), WithMaxAge(1*time.Hour))
+	if err != nil {
+		t.Fatalf("NewFileWriter() error = %v", err)
+	}
+
+	// Trigger rotation
+	if err := fw.Write(newTestLine("info", "line long enough to trigger rotation here")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Write(newTestLine("info", "after rotation")); err != nil {
+		t.Fatalf("Write error = %v", err)
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	// Give cleanup goroutine time to run
+	time.Sleep(500 * time.Millisecond)
+
+	// Old file should be deleted
+	if _, err := os.Stat(oldFile); err == nil {
+		t.Error("old rotated file should have been deleted by maxAge cleanup")
+	}
+}
+
+func TestFileWriter_NoRotationWithoutMaxSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+
+	fw, err := NewFileWriter(path)
+	if err != nil {
+		t.Fatalf("NewFileWriter() error = %v", err)
+	}
+
+	for range 10 {
+		if err := fw.Write(newTestLine("info", "repeated line")); err != nil {
+			t.Fatalf("Write error = %v", err)
+		}
+	}
+	if err := fw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected 1 file (no rotation), got %d", len(entries))
+	}
+}
+
 // --- MultiWriter tests ---
 
 func TestMultiWriter_FansOut(t *testing.T) {

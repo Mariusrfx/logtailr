@@ -79,6 +79,15 @@ type GlobalConfig struct {
 type OutputsConfig struct {
 	OpenSearch *OpenSearchOutputConfig `mapstructure:"opensearch"`
 	Webhook    *WebhookOutputConfig    `mapstructure:"webhook"`
+	File       *FileOutputConfig       `mapstructure:"file"`
+}
+
+// FileOutputConfig holds file output settings with rotation.
+type FileOutputConfig struct {
+	Path     string `mapstructure:"path"`
+	MaxSize  string `mapstructure:"max_size"`
+	MaxAge   string `mapstructure:"max_age"`
+	Compress bool   `mapstructure:"compress"`
 }
 
 // OpenSearchOutputConfig holds OpenSearch connection settings.
@@ -249,6 +258,23 @@ func validateOutputsConfig(outputs *OutputsConfig) error {
 		}
 	}
 
+	if outputs.File != nil {
+		fc := outputs.File
+		if fc.Path == "" {
+			return fmt.Errorf("config: file output requires a path")
+		}
+		if fc.MaxSize != "" {
+			if _, err := ParseByteSize(fc.MaxSize); err != nil {
+				return fmt.Errorf("config: file output has invalid max_size: %w", err)
+			}
+		}
+		if fc.MaxAge != "" {
+			if _, err := time.ParseDuration(fc.MaxAge); err != nil {
+				return fmt.Errorf("config: file output has invalid max_age: %w", err)
+			}
+		}
+	}
+
 	if outputs.Webhook != nil && outputs.Webhook.Enabled {
 		wh := outputs.Webhook
 		if wh.URL == "" {
@@ -341,6 +367,50 @@ func validateAlertsConfig(alerts *AlertsConfig) error {
 	}
 
 	return nil
+}
+
+// ParseByteSize parses a human-readable byte size string (e.g. "10MB", "500KB", "1GB").
+func ParseByteSize(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty size string")
+	}
+
+	s = strings.ToUpper(s)
+
+	multipliers := []struct {
+		suffix string
+		mult   int64
+	}{
+		{"GB", 1024 * 1024 * 1024},
+		{"MB", 1024 * 1024},
+		{"KB", 1024},
+		{"B", 1},
+	}
+
+	for _, m := range multipliers {
+		if numStr, found := strings.CutSuffix(s, m.suffix); found {
+			numStr = strings.TrimSpace(numStr)
+			var n int64
+			if _, err := fmt.Sscanf(numStr, "%d", &n); err != nil || fmt.Sprintf("%d", n) != numStr {
+				return 0, fmt.Errorf("invalid size number %q", numStr)
+			}
+			if n <= 0 {
+				return 0, fmt.Errorf("size must be positive")
+			}
+			return n * m.mult, nil
+		}
+	}
+
+	// Try plain number (bytes) — must be entirely numeric
+	var n int64
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil || fmt.Sprintf("%d", n) != s {
+		return 0, fmt.Errorf("invalid size %q: use format like 10MB, 500KB, 1GB", s)
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("size must be positive")
+	}
+	return n, nil
 }
 
 // validateExternalURL checks that a URL is valid and not targeting internal/private networks (SSRF prevention).
