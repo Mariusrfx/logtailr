@@ -15,13 +15,27 @@ type LogLine struct {
 
 // SourceConfig defines the configuration for a log source
 type SourceConfig struct {
-	Name      string `mapstructure:"name"`
-	Type      string `mapstructure:"type"`      // "file", "docker", "journalctl", "stdin"
-	Path      string `mapstructure:"path"`      // file path (type=file)
-	Container string `mapstructure:"container"` // container name/id (type=docker)
-	Unit      string `mapstructure:"unit"`      // systemd unit (type=journalctl)
-	Follow    bool   `mapstructure:"follow"`
-	Parser    string `mapstructure:"parser"` // "json", "logfmt", "text", "" (auto)
+	Name         string `mapstructure:"name"`
+	Type         string `mapstructure:"type"`          // "file", "docker", "journalctl", "stdin"
+	Path         string `mapstructure:"path"`          // file path (type=file)
+	Container    string `mapstructure:"container"`     // container name/id (type=docker)
+	Unit         string `mapstructure:"unit"`          // systemd unit (type=journalctl)
+	Priority     string `mapstructure:"priority"`      // journalctl priority filter (emerg..debug)
+	OutputFormat string `mapstructure:"output_format"` // journalctl output format: "json" or "" (short-iso)
+	Follow       bool   `mapstructure:"follow"`
+	Parser       string `mapstructure:"parser"` // "json", "logfmt", "text", "" (auto)
+}
+
+// JournalctlPriorities maps journalctl priority names to syslog numeric values.
+var JournalctlPriorities = map[string]int{
+	"emerg":   0,
+	"alert":   1,
+	"crit":    2,
+	"err":     3,
+	"warning": 4,
+	"notice":  5,
+	"info":    6,
+	"debug":   7,
 }
 
 // Parser type constants

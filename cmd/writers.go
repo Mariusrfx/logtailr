@@ -53,6 +53,8 @@ func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
 			FlushInterval: osCfg.FlushInterval,
 			TLSSkipVerify: osCfg.TLSSkipVerify,
 			MaxRetries:    osCfg.MaxRetries,
+			TemplateName:  osCfg.TemplateName,
+			DashboardsURL: osCfg.DashboardsURL,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("opensearch output: %w", err)

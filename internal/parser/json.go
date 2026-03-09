@@ -7,15 +7,28 @@ import (
 	"strings"
 )
 
-// ParseJSON parses a JSON formatted log line
+// ParseJSON parses a JSON formatted log line.
+// If the line contains embedded JSON (e.g. Fluentd/Docker prefix before a JSON object),
+// it extracts and parses the JSON portion.
 func (p *Parser) ParseJSON(line string) (*logline.LogLine, error) {
 	if err := validateLine(line); err != nil {
 		return nil, err
 	}
 
+	jsonStr := line
+
+	// If line doesn't start with '{', look for embedded JSON
+	if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+		idx := strings.Index(line, "{")
+		if idx < 0 {
+			return nil, ErrInvalidFormat
+		}
+		jsonStr = line[idx:]
+	}
+
 	// Use streaming decoder to avoid full in-memory copy
 	var raw map[string]interface{}
-	decoder := json.NewDecoder(strings.NewReader(line))
+	decoder := json.NewDecoder(strings.NewReader(jsonStr))
 	if err := decoder.Decode(&raw); err != nil {
 		return nil, err
 	}

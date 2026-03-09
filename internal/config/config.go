@@ -28,10 +28,11 @@ var validAlertSeverities = map[string]bool{
 
 // Config represents the full application configuration.
 type Config struct {
-	Sources []logline.SourceConfig `mapstructure:"sources"`
-	Global  GlobalConfig           `mapstructure:"global"`
-	Outputs OutputsConfig          `mapstructure:"outputs"`
-	Alerts  *AlertsConfig          `mapstructure:"alerts"`
+	Sources    []logline.SourceConfig `mapstructure:"sources"`
+	Global     GlobalConfig           `mapstructure:"global"`
+	Outputs    OutputsConfig          `mapstructure:"outputs"`
+	Alerts     *AlertsConfig          `mapstructure:"alerts"`
+	AllowLocal bool                   `mapstructure:"-"` // runtime flag, not from YAML
 }
 
 // AlertsConfig holds the alerts configuration.
@@ -101,6 +102,8 @@ type OpenSearchOutputConfig struct {
 	FlushInterval string   `mapstructure:"flush_interval"`
 	TLSSkipVerify bool     `mapstructure:"tls_skip_verify"`
 	MaxRetries    int      `mapstructure:"max_retries"`
+	TemplateName  string   `mapstructure:"template_name"`
+	DashboardsURL string   `mapstructure:"dashboards_url"`
 }
 
 // WebhookOutputConfig holds webhook settings.
@@ -134,7 +137,7 @@ var validOutputs = map[string]bool{
 }
 
 // LoadConfig reads and parses a YAML config file.
-func LoadConfig(path string) (*Config, error) {
+func LoadConfig(path string, allowLocal bool) (*Config, error) {
 	// Validate path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -175,6 +178,8 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	cfg.AllowLocal = allowLocal
+
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
 	}
@@ -212,6 +217,24 @@ func ValidateConfig(cfg *Config) error {
 			return fmt.Errorf("config: source %q of type journalctl requires a unit", src.Name)
 		}
 
+		if src.Priority != "" {
+			if src.Type != logline.SourceTypeJournalctl {
+				return fmt.Errorf("config: source %q: priority is only valid for journalctl sources", src.Name)
+			}
+			if _, ok := logline.JournalctlPriorities[strings.ToLower(src.Priority)]; !ok {
+				return fmt.Errorf("config: source %q has invalid priority %q (must be emerg, alert, crit, err, warning, notice, info, or debug)", src.Name, src.Priority)
+			}
+		}
+
+		if src.OutputFormat != "" {
+			if src.Type != logline.SourceTypeJournalctl {
+				return fmt.Errorf("config: source %q: output_format is only valid for journalctl sources", src.Name)
+			}
+			if src.OutputFormat != "json" {
+				return fmt.Errorf("config: source %q has invalid output_format %q (must be json)", src.Name, src.OutputFormat)
+			}
+		}
+
 		if !validParsers[src.Parser] {
 			return fmt.Errorf("config: source %q has invalid parser %q (must be json, logfmt, or text)", src.Name, src.Parser)
 		}
@@ -229,12 +252,12 @@ func ValidateConfig(cfg *Config) error {
 		return fmt.Errorf("config: output type file requires output_path")
 	}
 
-	if err := validateOutputsConfig(&cfg.Outputs); err != nil {
+	if err := validateOutputsConfig(&cfg.Outputs, cfg.AllowLocal); err != nil {
 		return err
 	}
 
 	if cfg.Alerts != nil && cfg.Alerts.Enabled {
-		if err := validateAlertsConfig(cfg.Alerts); err != nil {
+		if err := validateAlertsConfig(cfg.Alerts, cfg.AllowLocal); err != nil {
 			return err
 		}
 	}
@@ -242,7 +265,7 @@ func ValidateConfig(cfg *Config) error {
 	return nil
 }
 
-func validateOutputsConfig(outputs *OutputsConfig) error {
+func validateOutputsConfig(outputs *OutputsConfig, allowLocal bool) error {
 	if outputs.OpenSearch != nil && outputs.OpenSearch.Enabled {
 		osCfg := outputs.OpenSearch
 		if len(osCfg.Hosts) == 0 {
@@ -251,9 +274,11 @@ func validateOutputsConfig(outputs *OutputsConfig) error {
 		if osCfg.Index == "" {
 			return fmt.Errorf("config: opensearch requires an index")
 		}
-		for _, h := range osCfg.Hosts {
-			if err := validateExternalURL(h); err != nil {
-				return fmt.Errorf("config: opensearch host %q: %w", h, err)
+		if !allowLocal {
+			for _, h := range osCfg.Hosts {
+				if err := validateExternalURL(h); err != nil {
+					return fmt.Errorf("config: opensearch host %q: %w", h, err)
+				}
 			}
 		}
 	}
@@ -280,8 +305,10 @@ func validateOutputsConfig(outputs *OutputsConfig) error {
 		if wh.URL == "" {
 			return fmt.Errorf("config: webhook requires a url")
 		}
-		if err := validateExternalURL(wh.URL); err != nil {
-			return fmt.Errorf("config: webhook url: %w", err)
+		if !allowLocal {
+			if err := validateExternalURL(wh.URL); err != nil {
+				return fmt.Errorf("config: webhook url: %w", err)
+			}
 		}
 		if wh.MinLevel != "" {
 			if _, ok := logline.LogLevels[strings.ToLower(wh.MinLevel)]; !ok {
@@ -293,7 +320,7 @@ func validateOutputsConfig(outputs *OutputsConfig) error {
 	return nil
 }
 
-func validateAlertsConfig(alerts *AlertsConfig) error {
+func validateAlertsConfig(alerts *AlertsConfig, allowLocal bool) error {
 	if alerts.DefaultCooldown != "" {
 		if _, err := time.ParseDuration(alerts.DefaultCooldown); err != nil {
 			return fmt.Errorf("config: alerts has invalid default_cooldown: %w", err)
@@ -304,8 +331,10 @@ func validateAlertsConfig(alerts *AlertsConfig) error {
 		if alerts.Notify.Webhook.URL == "" {
 			return fmt.Errorf("config: alerts webhook requires a url")
 		}
-		if err := validateExternalURL(alerts.Notify.Webhook.URL); err != nil {
-			return fmt.Errorf("config: alerts webhook url: %w", err)
+		if !allowLocal {
+			if err := validateExternalURL(alerts.Notify.Webhook.URL); err != nil {
+				return fmt.Errorf("config: alerts webhook url: %w", err)
+			}
 		}
 	}
 

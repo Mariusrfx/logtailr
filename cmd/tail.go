@@ -39,6 +39,7 @@ var (
 	apiEnabled  bool
 	apiPort     int
 	apiAddr     string
+	allowLocal  bool
 )
 
 var tailCmd = &cobra.Command{
@@ -65,6 +66,7 @@ func init() {
 	tailCmd.Flags().BoolVar(&apiEnabled, "api", false, "Enable REST API and WebSocket server")
 	tailCmd.Flags().IntVar(&apiPort, "api-port", 8080, "API server port (1024-65535)")
 	tailCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1", "API server bind address")
+	tailCmd.Flags().BoolVar(&allowLocal, "allow-local", false, "Allow localhost/private IPs in URLs (disables SSRF prevention for local development)")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
@@ -174,7 +176,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *config.OutputsConfig, error) {
 	// If --config is set, load from YAML
 	if cfgFile != "" {
-		cfg, err := config.LoadConfig(cfgFile)
+		cfg, err := config.LoadConfig(cfgFile, allowLocal)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -242,7 +244,17 @@ func createTailer(src logline.SourceConfig, monitor *health.Monitor) (tailer.Tai
 	case logline.SourceTypeDocker:
 		return tailer.NewDockerTailer(src.Container, src.Follow, monitor)
 	case logline.SourceTypeJournalctl:
-		return tailer.NewJournalctlTailer(src.Unit, src.Follow, monitor)
+		jt, err := tailer.NewJournalctlTailer(src.Unit, src.Follow, monitor)
+		if err != nil {
+			return nil, err
+		}
+		if src.Priority != "" {
+			jt.WithPriority(src.Priority)
+		}
+		if src.OutputFormat != "" {
+			jt.WithOutputFormat(src.OutputFormat)
+		}
+		return jt, nil
 	case logline.SourceTypeStdin:
 		return tailer.NewStdinTailer(monitor), nil
 	default:

@@ -82,7 +82,7 @@ func (p *Parser) AutoDetect(line string) (*logline.LogLine, error) {
 		return nil, err
 	}
 
-	if strings.HasPrefix(line, "{") {
+	if strings.Contains(line, "{") {
 		if ll, err := p.ParseJSON(line); err == nil {
 			return ll, nil
 		}

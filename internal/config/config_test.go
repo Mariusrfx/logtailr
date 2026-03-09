@@ -35,7 +35,7 @@ global:
   show_health: true
 `)
 
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(path, false)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
@@ -61,7 +61,7 @@ global:
 }
 
 func TestLoadConfig_FileNotFound(t *testing.T) {
-	_, err := LoadConfig("/nonexistent/config.yaml")
+	_, err := LoadConfig("/nonexistent/config.yaml", false)
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
 	}
@@ -74,7 +74,7 @@ sources:
     type: [broken
 `)
 
-	_, err := LoadConfig(path)
+	_, err := LoadConfig(path, false)
 	if err == nil {
 		t.Error("expected error for invalid YAML, got nil")
 	}
@@ -444,7 +444,7 @@ sources:
     path: "/var/log/test.log"
 `)
 
-	cfg, err := LoadConfig(path)
+	cfg, err := LoadConfig(path, false)
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}

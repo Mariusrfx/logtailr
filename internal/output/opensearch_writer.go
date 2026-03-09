@@ -38,6 +38,8 @@ type OpenSearchConfig struct {
 	FlushInterval string   `mapstructure:"flush_interval"`
 	TLSSkipVerify bool     `mapstructure:"tls_skip_verify"`
 	MaxRetries    int      `mapstructure:"max_retries"`
+	TemplateName  string   `mapstructure:"template_name"`
+	DashboardsURL string   `mapstructure:"dashboards_url"`
 }
 
 // OpenSearchWriter sends log lines to OpenSearch/Elasticsearch via bulk API.
@@ -50,6 +52,8 @@ type OpenSearchWriter struct {
 	bulkSize      int
 	flushInterval time.Duration
 	maxRetries    int
+	templateName  string
+	dashboardsURL string
 
 	buffer []json.RawMessage
 	mu     sync.Mutex
@@ -109,6 +113,11 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	templateName := cfg.TemplateName
+	if templateName == "" {
+		templateName = "logtailr"
+	}
+
 	ow := &OpenSearchWriter{
 		client: &http.Client{
 			Timeout:   defaultHTTPTimeout,
@@ -121,10 +130,24 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 		bulkSize:      bulkSize,
 		flushInterval: flushInterval,
 		maxRetries:    maxRetries,
+		templateName:  templateName,
+		dashboardsURL: cfg.DashboardsURL,
 		buffer:        make([]json.RawMessage, 0, bulkSize),
 		ctx:           ctx,
 		cancel:        cancel,
 		done:          make(chan struct{}),
+	}
+
+	// Create index template on startup (best-effort)
+	if err := ow.ensureIndexTemplate(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create index template: %v\n", err)
+	}
+
+	// Create Dashboards index pattern if URL is configured (best-effort)
+	if ow.dashboardsURL != "" {
+		if err := ow.ensureIndexPattern(); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create dashboards index pattern: %v\n", err)
+		}
 	}
 
 	go ow.flushLoop()
@@ -285,6 +308,115 @@ func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
 	}
 	if err := json.NewDecoder(limitedBody).Decode(&bulkResp); err == nil && bulkResp.Errors {
 		return fmt.Errorf("opensearch bulk response contains partial errors")
+	}
+
+	return nil
+}
+
+// ensureIndexTemplate creates an index template in OpenSearch with proper mappings.
+func (ow *OpenSearchWriter) ensureIndexTemplate() error {
+	// Build index pattern from the configured index (replace date tokens with *)
+	indexPattern := ow.index
+	for _, token := range []string{"%{+YYYY.MM.dd}", "%{+YYYY.MM}", "%{+YYYY}"} {
+		indexPattern = strings.ReplaceAll(indexPattern, token, "*")
+	}
+
+	template := map[string]any{
+		"index_patterns": []string{indexPattern},
+		"template": map[string]any{
+			"settings": map[string]any{
+				"number_of_shards":   1,
+				"number_of_replicas": 0,
+			},
+			"mappings": map[string]any{
+				"properties": map[string]any{
+					"timestamp": map[string]any{"type": "date"},
+					"level":     map[string]any{"type": "keyword"},
+					"message":   map[string]any{"type": "text"},
+					"source":    map[string]any{"type": "keyword"},
+					"fields":    map[string]any{"type": "object", "enabled": true},
+				},
+			},
+		},
+		"priority": 100,
+	}
+
+	body, err := json.Marshal(template)
+	if err != nil {
+		return fmt.Errorf("failed to marshal template: %w", err)
+	}
+
+	host := ow.hosts[0]
+	url := strings.TrimRight(host, "/") + "/_index_template/" + ow.templateName
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if ow.username != "" {
+		req.SetBasicAuth(ow.username, ow.password)
+	}
+
+	resp, err := ow.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyRead))
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d creating index template", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// ensureIndexPattern creates an index pattern in OpenSearch Dashboards.
+func (ow *OpenSearchWriter) ensureIndexPattern() error {
+	// Build the pattern from the configured index
+	indexPattern := ow.index
+	for _, token := range []string{"%{+YYYY.MM.dd}", "%{+YYYY.MM}", "%{+YYYY}"} {
+		indexPattern = strings.ReplaceAll(indexPattern, token, "*")
+	}
+
+	payload := map[string]any{
+		"attributes": map[string]any{
+			"title":         indexPattern,
+			"timeFieldName": "timestamp",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal index pattern: %w", err)
+	}
+
+	url := strings.TrimRight(ow.dashboardsURL, "/") + "/api/saved_objects/index-pattern/" + ow.templateName
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("osd-xsrf", "true")
+
+	resp, err := ow.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyRead))
+
+	// 409 = already exists, which is fine
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict {
+		return fmt.Errorf("HTTP %d creating index pattern", resp.StatusCode)
 	}
 
 	return nil

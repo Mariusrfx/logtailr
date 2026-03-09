@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-09
+
+### Added
+- **F3.2 OpenSearch index template**: Automatically creates an index template on startup with proper mappings (timestamp as `date`, level as `keyword`, message as `text`, source as `keyword`, fields as `object`). Configurable via `template_name` (default: `logtailr`)
+- **F3.2 OpenSearch Dashboards index pattern**: Automatically creates an index pattern in Dashboards on startup when `dashboards_url` is configured. Handles 409 Conflict gracefully (pattern already exists)
+- **F2.2 JournalctlTailer priority filter**: New `priority` field in journalctl source config to filter by syslog priority (`-p err`, `-p warning`, etc.)
+- **F2.2 JournalctlTailer JSON output**: New `output_format: "json"` field in journalctl source config to use structured JSON output (`-o json`). Parses `MESSAGE`, `PRIORITY`, `__REALTIME_TIMESTAMP`, and systemd fields (`_HOSTNAME`, `_SYSTEMD_UNIT`, `_PID`, etc.) into LogLine fields
+- **Config validation**: Priority validated against syslog levels (emerg–debug), `output_format` restricted to journalctl sources, only `json` supported
+
 ## [0.7.0] - 2026-03-09
 
 ### Added

@@ -86,8 +86,20 @@ logtailr tail --config config.yaml
 |------|-------------|-------------|
 | `file` | `path` | Local log file, supports follow and log rotation |
 | `docker` | `container` | Docker container logs via `docker logs`, auto-reconnects on restart |
-| `journalctl` | `unit` | Systemd journal via `journalctl -u` |
+| `journalctl` | `unit` | Systemd journal via `journalctl -u`, supports priority filter and JSON output |
 | `stdin` | — | Read from pipe (auto-detected or via config) |
+
+### Journalctl options
+
+```yaml
+sources:
+  - name: "ssh-errors"
+    type: "journalctl"
+    unit: "ssh.service"
+    priority: "err"           # Filter: emerg, alert, crit, err, warning, notice, info, debug
+    output_format: "json"     # Structured output with parsed fields (_HOSTNAME, _PID, etc.)
+    follow: true
+```
 
 ## Output formats
 
@@ -145,7 +157,11 @@ outputs:
     bulk_size: 500
     flush_interval: "5s"
     max_retries: 3
+    template_name: "logtailr"           # Index template name (auto-created on startup)
+    dashboards_url: "http://localhost:5601"  # Auto-create index pattern in Dashboards
 ```
+
+On startup, logtailr automatically creates an index template with proper field mappings (timestamp, level, source, message) and an index pattern in OpenSearch Dashboards if `dashboards_url` is set.
 
 ### Webhook
 

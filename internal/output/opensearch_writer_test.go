@@ -40,6 +40,13 @@ func TestOpenSearchWriter_BulkInsert(t *testing.T) {
 	var received atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle index template creation (startup)
+		if strings.HasPrefix(r.URL.Path, "/_index_template/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		}
+
 		if r.URL.Path != "/_bulk" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -87,6 +94,10 @@ func TestOpenSearchWriter_BasicAuth(t *testing.T) {
 	var gotAuth atomic.Value
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_index_template/") {
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		}
 		gotAuth.Store(r.Header.Get("Authorization"))
 		_, _ = w.Write([]byte(`{"errors":false}`))
 	}))
@@ -119,6 +130,10 @@ func TestOpenSearchWriter_IndexDatePattern(t *testing.T) {
 	var gotPath atomic.Value
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_index_template/") {
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		}
 		gotPath.Store(r.URL.Path)
 		_, _ = w.Write([]byte(`{"errors":false}`))
 	}))
@@ -147,6 +162,10 @@ func TestOpenSearchWriter_RetryOnFailure(t *testing.T) {
 	var attempts atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_index_template/") {
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		}
 		n := attempts.Add(1)
 		if n < 3 {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -181,6 +200,10 @@ func TestOpenSearchWriter_BulkBodyFormat(t *testing.T) {
 	var gotBody atomic.Value
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_index_template/") {
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		gotBody.Store(string(body))
 		_, _ = w.Write([]byte(`{"errors":false}`))

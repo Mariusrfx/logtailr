@@ -54,6 +54,52 @@ func TestParseJSON_Valid(t *testing.T) {
 	}
 }
 
+func TestParseJSON_EmbeddedJSON(t *testing.T) {
+	p := New("test.log")
+
+	tests := []struct {
+		name    string
+		input   string
+		wantLvl string
+		wantMsg string
+	}{
+		{
+			name:    "fluentd docker wrapper",
+			input:   `2026-03-09T11:20:57.753854996Z 2026-03-09 11:20:57.753659809 +0000 all.udp: {"level":"error","message":"Connection refused","host":"67b3dedeb0b4"}`,
+			wantLvl: "error",
+			wantMsg: "Connection refused",
+		},
+		{
+			name:    "simple prefix",
+			input:   `INFO: {"level":"warn","message":"Slow query","duration":2.5}`,
+			wantLvl: "warn",
+			wantMsg: "Slow query",
+		},
+		{
+			name:    "docker timestamp prefix",
+			input:   `2026-03-09T11:20:57Z {"timestamp":"2026-03-09T11:20:57Z","level":"fatal","message":"OOM killed"}`,
+			wantLvl: "fatal",
+			wantMsg: "OOM killed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ll, err := p.ParseJSON(tt.input)
+			if err != nil {
+				t.Fatalf("ParseJSON() error = %v", err)
+			}
+
+			if ll.Level != tt.wantLvl {
+				t.Errorf("Level = %q, want %q", ll.Level, tt.wantLvl)
+			}
+			if ll.Message != tt.wantMsg {
+				t.Errorf("Message = %q, want %q", ll.Message, tt.wantMsg)
+			}
+		})
+	}
+}
+
 func TestParseJSON_Invalid(t *testing.T) {
 	p := New("test.log")
 
@@ -223,6 +269,12 @@ func TestParse_AutoDetect(t *testing.T) {
 			input:   `level=warn msg="Logfmt warning" code=500`,
 			wantLvl: "warn",
 			wantMsg: "Logfmt warning",
+		},
+		{
+			name:    "detects embedded json",
+			input:   `2026-03-09T11:20:57Z all.udp: {"level":"error","message":"Embedded JSON"}`,
+			wantLvl: "error",
+			wantMsg: "Embedded JSON",
 		},
 		{
 			name:    "falls back to text",
