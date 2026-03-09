@@ -213,6 +213,150 @@ func TestValidateConfig_NoSources(t *testing.T) {
 	}
 }
 
+func validBaseConfig() *Config {
+	return &Config{
+		Sources: []logline.SourceConfig{{
+			Name: "test",
+			Type: "file",
+			Path: "/a.log",
+		}},
+	}
+}
+
+func TestValidateConfig_AlertsValid(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled:         true,
+		DefaultCooldown: "5m",
+		Notify:          AlertNotifyConfig{Console: true},
+		Rules: []AlertRuleConfig{
+			{Name: "fatal", Type: "level", Severity: "critical", Level: "fatal"},
+			{Name: "pattern", Type: "pattern", Severity: "warning", Pattern: "OOM"},
+			{Name: "rate", Type: "error_rate", Severity: "warning", Threshold: 10, Window: "5m"},
+			{Name: "health", Type: "health_change", Severity: "critical"},
+		},
+	}
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("expected valid config, got: %v", err)
+	}
+}
+
+func TestValidateConfig_AlertsNoRules(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{Enabled: true, Notify: AlertNotifyConfig{Console: true}}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for alerts with no rules")
+	}
+}
+
+func TestValidateConfig_AlertsDuplicateRuleName(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules: []AlertRuleConfig{
+			{Name: "r1", Type: "level", Severity: "critical", Level: "fatal"},
+			{Name: "r1", Type: "level", Severity: "warning", Level: "error"},
+		},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for duplicate rule name")
+	}
+}
+
+func TestValidateConfig_AlertsInvalidRuleType(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "unknown", Severity: "warning"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid rule type")
+	}
+}
+
+func TestValidateConfig_AlertsInvalidSeverity(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "level", Severity: "high", Level: "error"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid severity")
+	}
+}
+
+func TestValidateConfig_AlertsPatternMissing(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "pattern", Severity: "warning"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for pattern rule without pattern")
+	}
+}
+
+func TestValidateConfig_AlertsInvalidRegex(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "pattern", Severity: "warning", Pattern: "[invalid"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid regex")
+	}
+}
+
+func TestValidateConfig_AlertsErrorRateMissingThreshold(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "error_rate", Severity: "warning", Window: "5m"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for error_rate without threshold")
+	}
+}
+
+func TestValidateConfig_AlertsErrorRateMissingWindow(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled: true,
+		Notify:  AlertNotifyConfig{Console: true},
+		Rules:   []AlertRuleConfig{{Name: "r", Type: "error_rate", Severity: "warning", Threshold: 10}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for error_rate without window")
+	}
+}
+
+func TestValidateConfig_AlertsInvalidCooldown(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{
+		Enabled:         true,
+		DefaultCooldown: "not-a-duration",
+		Notify:          AlertNotifyConfig{Console: true},
+		Rules:           []AlertRuleConfig{{Name: "r", Type: "health_change", Severity: "critical"}},
+	}
+	if err := ValidateConfig(cfg); err == nil {
+		t.Error("expected error for invalid default_cooldown")
+	}
+}
+
+func TestValidateConfig_AlertsDisabledSkipsValidation(t *testing.T) {
+	cfg := validBaseConfig()
+	cfg.Alerts = &AlertsConfig{Enabled: false} // no rules, but disabled so ok
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("disabled alerts should not be validated, got: %v", err)
+	}
+}
+
 func TestLoadConfig_Defaults(t *testing.T) {
 	path := writeConfigFile(t, `
 sources:

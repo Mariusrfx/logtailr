@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"logtailr/internal/alert"
 	"logtailr/internal/api"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
@@ -21,6 +22,7 @@ func runPipeline(
 	writer output.Writer,
 	healthMonitor *health.Monitor,
 	apiServer *api.Server,
+	alertEngine *alert.Engine,
 ) error {
 	for {
 		select {
@@ -51,6 +53,11 @@ func runPipeline(
 				safeSource := api.SanitizeLabel(parsed.Source, 128)
 				safeLevel := api.SanitizeLabel(parsed.Level, 16)
 				apiServer.Metrics().LogsTotal.WithLabelValues(safeSource, safeLevel).Inc()
+			}
+
+			// Evaluate alert rules before filtering (alerts see ALL logs)
+			if alertEngine != nil {
+				alertEngine.ProcessLine(parsed)
 			}
 
 			// Filter: level

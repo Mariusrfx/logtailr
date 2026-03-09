@@ -9,6 +9,7 @@ import (
 // Metrics holds all Prometheus metrics for logtailr.
 type Metrics struct {
 	LogsTotal          *prometheus.CounterVec
+	AlertsTotal        *prometheus.CounterVec
 	SourceHealthy      *prometheus.GaugeVec
 	SourceErrorsTotal  *prometheus.CounterVec
 	ProcessingDuration *prometheus.HistogramVec
@@ -25,6 +26,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Total number of log lines processed, by source and level.",
 			},
 			[]string{"source", "level"},
+		),
+		AlertsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "logtailr_alerts_total",
+				Help: "Total number of alerts fired, by rule and severity.",
+			},
+			[]string{"rule", "severity"},
 		),
 		SourceHealthy: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -64,6 +72,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 
 	reg.MustRegister(
 		m.LogsTotal,
+		m.AlertsTotal,
 		m.SourceHealthy,
 		m.SourceErrorsTotal,
 		m.ProcessingDuration,
@@ -77,9 +86,8 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 // UpdateSourceHealth syncs Prometheus gauges with current health state.
 func (m *Metrics) UpdateSourceHealth(monitor *health.Monitor) {
 	statuses := monitor.GetAllStatuses()
-	healthy, degraded, failed, stopped := monitor.GetHealthCount()
+	healthy, degraded, failed, _ := monitor.GetHealthCount()
 	m.ActiveSources.Set(float64(healthy + degraded + failed))
-	_ = stopped
 
 	for _, s := range statuses {
 		// Reset all status labels for this source, then set the active one

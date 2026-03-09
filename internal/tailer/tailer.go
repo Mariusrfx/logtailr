@@ -8,15 +8,15 @@ import (
 	"regexp"
 )
 
-// Tailer interface para implementaciones de diferentes tipos de sources
+// Tailer is the interface for different source type implementations.
 type Tailer interface {
-	// Start inicia el tailing en una goroutine
+	// Start begins tailing in a goroutine.
 	Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error)
 
-	// Stop detiene el tailing
+	// Stop stops the tailing process.
 	Stop() error
 
-	// GetSourceName retorna el nombre de la fuente
+	// GetSourceName returns the source name.
 	GetSourceName() string
 }
 
@@ -26,35 +26,35 @@ type BaseTailer struct {
 	HealthMonitor *health.Monitor
 }
 
-// ReportHealthy marca la fuente como saludable
+// ReportHealthy marks the source as healthy.
 func (b *BaseTailer) ReportHealthy() {
 	if b.HealthMonitor != nil {
 		b.HealthMonitor.MarkHealthy(b.SourceName)
 	}
 }
 
-// ReportFailed marca la fuente como fallida
+// ReportFailed marks the source as failed.
 func (b *BaseTailer) ReportFailed(err error) {
 	if b.HealthMonitor != nil {
 		b.HealthMonitor.MarkFailed(b.SourceName, err)
 	}
 }
 
-// ReportDegraded marca la fuente como degradada
+// ReportDegraded marks the source as degraded.
 func (b *BaseTailer) ReportDegraded(err error) {
 	if b.HealthMonitor != nil {
 		b.HealthMonitor.MarkDegraded(b.SourceName, err)
 	}
 }
 
-// ReportStopped marca la fuente como detenida
+// ReportStopped marks the source as stopped.
 func (b *BaseTailer) ReportStopped() {
 	if b.HealthMonitor != nil {
 		b.HealthMonitor.MarkStopped(b.SourceName)
 	}
 }
 
-// GetSourceName retorna el nombre de la fuente
+// GetSourceName returns the source name.
 func (b *BaseTailer) GetSourceName() string {
 	return b.SourceName
 }

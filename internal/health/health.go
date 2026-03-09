@@ -40,10 +40,14 @@ func (s *SourceHealth) copy() *SourceHealth {
 	return &copied
 }
 
+// StatusChangeFunc is called when a source's health status changes.
+type StatusChangeFunc func(source string, oldStatus, newStatus Status)
+
 // Monitor manages the health status of all sources
 type Monitor struct {
-	mu      sync.RWMutex
-	sources map[string]*SourceHealth
+	mu       sync.RWMutex
+	sources  map[string]*SourceHealth
+	onChange StatusChangeFunc
 }
 
 // NewMonitor creates a new health monitor
@@ -67,18 +71,33 @@ func (m *Monitor) RegisterSource(name string) {
 	}
 }
 
+// SetOnChange registers a callback for health status transitions.
+func (m *Monitor) SetOnChange(fn StatusChangeFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onChange = fn
+}
+
 // UpdateStatus updates the status of a source
 func (m *Monitor) UpdateStatus(name string, status Status, err error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	source := m.getOrCreateSource(name)
+	oldStatus := source.Status
 	source.Status = status
 	source.LastUpdate = time.Now()
 
 	if err != nil {
 		source.LastError = err
 		source.ErrorCount++
+	}
+
+	onChange := m.onChange
+	m.mu.Unlock()
+
+	// Fire callback outside the lock to prevent deadlocks
+	if onChange != nil && oldStatus != status {
+		onChange(name, oldStatus, status)
 	}
 }
 

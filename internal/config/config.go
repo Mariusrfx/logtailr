@@ -7,16 +7,63 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
+
+var validAlertRuleTypes = map[string]bool{
+	"pattern":       true,
+	"level":         true,
+	"error_rate":    true,
+	"health_change": true,
+}
+
+var validAlertSeverities = map[string]bool{
+	"warning":  true,
+	"critical": true,
+}
 
 // Config represents the full application configuration.
 type Config struct {
 	Sources []logline.SourceConfig `mapstructure:"sources"`
 	Global  GlobalConfig           `mapstructure:"global"`
 	Outputs OutputsConfig          `mapstructure:"outputs"`
+	Alerts  *AlertsConfig          `mapstructure:"alerts"`
+}
+
+// AlertsConfig holds the alerts configuration.
+type AlertsConfig struct {
+	Enabled         bool              `mapstructure:"enabled"`
+	DefaultCooldown string            `mapstructure:"default_cooldown"`
+	Notify          AlertNotifyConfig `mapstructure:"notify"`
+	Rules           []AlertRuleConfig `mapstructure:"rules"`
+}
+
+// AlertNotifyConfig holds alert notification destinations.
+type AlertNotifyConfig struct {
+	Console bool                `mapstructure:"console"`
+	Webhook *AlertWebhookConfig `mapstructure:"webhook"`
+}
+
+// AlertWebhookConfig holds webhook settings for alerts.
+type AlertWebhookConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+// AlertRuleConfig holds the configuration for a single alert rule.
+type AlertRuleConfig struct {
+	Name      string `mapstructure:"name"`
+	Type      string `mapstructure:"type"`
+	Severity  string `mapstructure:"severity"`
+	Pattern   string `mapstructure:"pattern"`
+	Level     string `mapstructure:"level"`
+	Source    string `mapstructure:"source"`
+	Threshold int    `mapstructure:"threshold"`
+	Window    string `mapstructure:"window"`
+	Cooldown  string `mapstructure:"cooldown"`
 }
 
 // GlobalConfig holds global settings.
@@ -177,6 +224,12 @@ func ValidateConfig(cfg *Config) error {
 		return err
 	}
 
+	if cfg.Alerts != nil && cfg.Alerts.Enabled {
+		if err := validateAlertsConfig(cfg.Alerts); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -208,6 +261,82 @@ func validateOutputsConfig(outputs *OutputsConfig) error {
 			if _, ok := logline.LogLevels[strings.ToLower(wh.MinLevel)]; !ok {
 				return fmt.Errorf("config: webhook has invalid min_level %q", wh.MinLevel)
 			}
+		}
+	}
+
+	return nil
+}
+
+func validateAlertsConfig(alerts *AlertsConfig) error {
+	if alerts.DefaultCooldown != "" {
+		if _, err := time.ParseDuration(alerts.DefaultCooldown); err != nil {
+			return fmt.Errorf("config: alerts has invalid default_cooldown: %w", err)
+		}
+	}
+
+	if alerts.Notify.Webhook != nil {
+		if alerts.Notify.Webhook.URL == "" {
+			return fmt.Errorf("config: alerts webhook requires a url")
+		}
+		if err := validateExternalURL(alerts.Notify.Webhook.URL); err != nil {
+			return fmt.Errorf("config: alerts webhook url: %w", err)
+		}
+	}
+
+	if len(alerts.Rules) == 0 {
+		return fmt.Errorf("config: alerts enabled but no rules defined")
+	}
+
+	seenRules := make(map[string]bool)
+	for i, rule := range alerts.Rules {
+		if rule.Name == "" {
+			return fmt.Errorf("config: alert rule[%d] is missing a name", i)
+		}
+		if seenRules[rule.Name] {
+			return fmt.Errorf("config: duplicate alert rule name %q", rule.Name)
+		}
+		seenRules[rule.Name] = true
+
+		if !validAlertRuleTypes[rule.Type] {
+			return fmt.Errorf("config: alert rule %q has invalid type %q", rule.Name, rule.Type)
+		}
+		if !validAlertSeverities[rule.Severity] {
+			return fmt.Errorf("config: alert rule %q has invalid severity %q (must be warning or critical)", rule.Name, rule.Severity)
+		}
+
+		if rule.Cooldown != "" {
+			if _, err := time.ParseDuration(rule.Cooldown); err != nil {
+				return fmt.Errorf("config: alert rule %q has invalid cooldown: %w", rule.Name, err)
+			}
+		}
+
+		switch rule.Type {
+		case "pattern":
+			if rule.Pattern == "" {
+				return fmt.Errorf("config: alert rule %q of type pattern requires a pattern", rule.Name)
+			}
+			if _, err := regexp.Compile(rule.Pattern); err != nil {
+				return fmt.Errorf("config: alert rule %q has invalid pattern: %w", rule.Name, err)
+			}
+		case "level":
+			if rule.Level == "" {
+				return fmt.Errorf("config: alert rule %q of type level requires a level", rule.Name)
+			}
+			if _, ok := logline.LogLevels[strings.ToLower(rule.Level)]; !ok {
+				return fmt.Errorf("config: alert rule %q has invalid level %q", rule.Name, rule.Level)
+			}
+		case "error_rate":
+			if rule.Threshold <= 0 {
+				return fmt.Errorf("config: alert rule %q of type error_rate requires a positive threshold", rule.Name)
+			}
+			if rule.Window == "" {
+				return fmt.Errorf("config: alert rule %q of type error_rate requires a window", rule.Name)
+			}
+			if _, err := time.ParseDuration(rule.Window); err != nil {
+				return fmt.Errorf("config: alert rule %q has invalid window: %w", rule.Name, err)
+			}
+		case "health_change":
+			// No extra fields required
 		}
 	}
 

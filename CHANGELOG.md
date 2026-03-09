@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-09
+
+### Added
+- **F4.3 Alert Engine**: Rule-based alert system with 4 rule types — `pattern` (regex match on log messages), `level` (severity threshold), `error_rate` (sliding window count), `health_change` (source status transitions)
+- **Alert Notifiers**: Console notifier (colored output to stderr) and webhook notifier (HTTP POST with JSON payload, 10s timeout, 1MB response limit)
+- **Rate Limiting**: Per-rule cooldown enforcement to prevent alert spam, configurable per rule or via `default_cooldown`
+- **API endpoints**: `GET /alerts` (recent alert events with severity, source, timestamp), `GET /alerts/rules` (configured rules with fire count and last fired time)
+- **Prometheus metric**: `logtailr_alerts_total{rule,severity}` counter for fired alerts
+- **CLI integration**: Alert engine wired into the tail pipeline, health monitor change callback triggers health_change rules
+- **Config validation**: Full validation of alert rules — type/severity enums, regex compilation, level whitelist, duration parsing, duplicate name detection, SSRF prevention on webhook URLs
+
 ## [0.5.0] - 2026-03-09
 
 ### Added

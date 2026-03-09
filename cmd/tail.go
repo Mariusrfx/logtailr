@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"logtailr/internal/alert"
 	"logtailr/internal/api"
 	"logtailr/internal/config"
 	"logtailr/internal/filter"
@@ -107,6 +108,16 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = writer.Close() }()
 
+	// Start alert engine if configured
+	var alertEngine *alert.Engine
+	if fullCfg != nil && fullCfg.Alerts != nil && fullCfg.Alerts.Enabled {
+		alertEngine, err = buildAlertEngine(fullCfg.Alerts, healthMonitor)
+		if err != nil {
+			return fmt.Errorf("alerts: %w", err)
+		}
+		defer func() { _ = alertEngine.Close() }()
+	}
+
 	// Start API server if enabled
 	var apiServer *api.Server
 	if apiEnabled {
@@ -115,9 +126,10 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		}
 		listenAddr := fmt.Sprintf("%s:%d", apiAddr, apiPort)
 		apiServer = api.NewServer(api.ServerConfig{
-			Addr:    listenAddr,
-			Monitor: healthMonitor,
-			Config:  fullCfg,
+			Addr:        listenAddr,
+			Monitor:     healthMonitor,
+			Config:      fullCfg,
+			AlertEngine: alertEngine,
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
@@ -149,7 +161,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Run the pipeline (blocks until ctx is cancelled)
-	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer, alertEngine)
 
 	// Stop all tailers
 	for _, t := range tailers {

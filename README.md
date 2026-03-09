@@ -17,6 +17,7 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 - **WebSocket streaming** — Real-time log streaming with level/source filters
 - **Prometheus metrics** — `logtailr_logs_total`, source health gauges, WebSocket client count
 - **YAML config** — Define multiple sources and outputs with a single config file
+- **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and webhook/console notifications
 - **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention
 
 ## Install
@@ -165,6 +166,8 @@ logtailr tail --config config.yaml --api --api-port 8080
 | `GET /health/sources` | All sources with status, error count, uptime |
 | `GET /health/sources/:name` | Single source detail |
 | `GET /config` | Current config (secrets redacted) |
+| `GET /alerts` | Recent alert events with severity and source |
+| `GET /alerts/rules` | Configured alert rules with fire count and last fired |
 | `GET /metrics` | Prometheus metrics |
 
 ### WebSocket
@@ -182,12 +185,55 @@ ws.onmessage = (event) => {
 const ws = new WebSocket('ws://localhost:8080/ws/logs?level=error&source=app.log');
 ```
 
+### Alerts
+
+Define rules to trigger alerts on specific conditions. Alerts support per-rule cooldown to prevent spam and can notify via console (stderr) or webhook:
+
+```yaml
+alerts:
+  enabled: true
+  default_cooldown: "5m"
+  notify:
+    console: true
+    webhook:
+      url: "https://hooks.slack.com/services/XXX"
+  rules:
+    - name: "fatal-errors"
+      type: "level"
+      severity: "critical"
+      level: "fatal"
+      cooldown: "10m"
+
+    - name: "oom-pattern"
+      type: "pattern"
+      severity: "critical"
+      pattern: "OutOfMemory|OOM"
+
+    - name: "high-error-rate"
+      type: "error_rate"
+      severity: "warning"
+      threshold: 100
+      window: "5m"
+
+    - name: "source-down"
+      type: "health_change"
+      severity: "critical"
+```
+
+| Rule type | Description | Required fields |
+|-----------|-------------|-----------------|
+| `pattern` | Regex match on log message | `pattern` |
+| `level` | Fires when log level >= threshold | `level` |
+| `error_rate` | Fires when errors exceed count in sliding window | `threshold`, `window` |
+| `health_change` | Fires when a source changes health status | — |
+
 ### Prometheus metrics
 
 ```
 logtailr_logs_total{source="app.log",level="error"} 150
 logtailr_source_healthy{source="app.log",status="healthy"} 1
 logtailr_source_errors_total{source="app.log"} 2
+logtailr_alerts_total{rule="fatal-errors",severity="critical"} 3
 logtailr_active_sources 4
 logtailr_websocket_clients 2
 ```
@@ -236,9 +282,11 @@ logtailr/
 ├── api/
 │   └── openapi.json        # OpenAPI 3.1 spec
 ├── cmd/                    # CLI commands (cobra)
+│   ├── alerts.go
 │   ├── root.go
 │   └── tail.go
 ├── internal/
+│   ├── alert/              # Alert engine, rules, notifiers, rate limiting
 │   ├── api/                # REST API, Prometheus metrics, WebSocket hub
 │   ├── config/             # YAML config loader + validation
 │   ├── filter/             # Level and regex filtering

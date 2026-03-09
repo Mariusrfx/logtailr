@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"logtailr/internal/alert"
 	"logtailr/internal/config"
 	"logtailr/internal/health"
 	"net/http"
@@ -28,21 +29,23 @@ const (
 
 // Server is the HTTP API server exposing health, metrics, and WebSocket endpoints.
 type Server struct {
-	httpServer *http.Server
-	monitor    *health.Monitor
-	hub        *Hub
-	metrics    *Metrics
-	registry   *prometheus.Registry
-	cfg        *config.Config
-	startTime  time.Time
-	cancelCtx  context.CancelFunc
+	httpServer  *http.Server
+	monitor     *health.Monitor
+	hub         *Hub
+	metrics     *Metrics
+	registry    *prometheus.Registry
+	cfg         *config.Config
+	alertEngine *alert.Engine
+	startTime   time.Time
+	cancelCtx   context.CancelFunc
 }
 
 // ServerConfig holds configuration for the API server.
 type ServerConfig struct {
-	Addr    string // bind address, e.g. "127.0.0.1:8080"
-	Monitor *health.Monitor
-	Config  *config.Config
+	Addr        string // bind address, e.g. "127.0.0.1:8080"
+	Monitor     *health.Monitor
+	Config      *config.Config
+	AlertEngine *alert.Engine
 }
 
 // NewServer creates a new API server.
@@ -51,11 +54,12 @@ func NewServer(sc ServerConfig) *Server {
 	registry.MustRegister(collectors.NewGoCollector())
 
 	s := &Server{
-		monitor:   sc.Monitor,
-		hub:       NewHub(),
-		registry:  registry,
-		cfg:       sc.Config,
-		startTime: time.Now(),
+		monitor:     sc.Monitor,
+		hub:         NewHub(),
+		registry:    registry,
+		cfg:         sc.Config,
+		alertEngine: sc.AlertEngine,
+		startTime:   time.Now(),
 	}
 	s.metrics = NewMetrics(registry)
 
@@ -65,6 +69,8 @@ func NewServer(sc ServerConfig) *Server {
 	mux.HandleFunc("GET /health/sources/{name}", s.handleHealthSource)
 	mux.HandleFunc("GET /config", s.handleConfig)
 	mux.HandleFunc("GET /ws/logs", s.handleWebSocket)
+	mux.HandleFunc("GET /alerts", s.handleAlerts)
+	mux.HandleFunc("GET /alerts/rules", s.handleAlertRules)
 	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
