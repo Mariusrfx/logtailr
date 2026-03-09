@@ -13,6 +13,9 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 - **Real-time file tailing** — Follow files with fsnotify, handles log rotation
 - **Multiple outputs** — Console (colored), JSON (NDJSON), file, OpenSearch/Elasticsearch, webhooks
 - **Health monitoring** — Track source status (healthy/degraded/failed/stopped)
+- **REST API** — Health endpoints, config inspection, Prometheus metrics
+- **WebSocket streaming** — Real-time log streaming with level/source filters
+- **Prometheus metrics** — `logtailr_logs_total`, source health gauges, WebSocket client count
 - **YAML config** — Define multiple sources and outputs with a single config file
 - **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention
 
@@ -146,6 +149,49 @@ outputs:
 
 Multiple outputs can be active simultaneously (e.g. console + OpenSearch + webhook).
 
+## API & Monitoring
+
+Enable the API server with `--api`:
+
+```bash
+logtailr tail --config config.yaml --api --api-port 8080
+```
+
+### REST endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Overall health status (healthy/degraded/unhealthy) |
+| `GET /health/sources` | All sources with status, error count, uptime |
+| `GET /health/sources/:name` | Single source detail |
+| `GET /config` | Current config (secrets redacted) |
+| `GET /metrics` | Prometheus metrics |
+
+### WebSocket
+
+Stream logs in real-time:
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/ws/logs');
+ws.onmessage = (event) => {
+  const log = JSON.parse(event.data);
+  console.log(`[${log.level}] ${log.message}`);
+};
+
+// Filter by level and source
+const ws = new WebSocket('ws://localhost:8080/ws/logs?level=error&source=app.log');
+```
+
+### Prometheus metrics
+
+```
+logtailr_logs_total{source="app.log",level="error"} 150
+logtailr_source_healthy{source="app.log",status="healthy"} 1
+logtailr_source_errors_total{source="app.log"} 2
+logtailr_active_sources 4
+logtailr_websocket_clients 2
+```
+
 ## Supported log formats
 
 ### JSON
@@ -179,14 +225,21 @@ make clean    # Remove build artifacts
 make help     # Show all targets
 ```
 
+## OpenAPI spec
+
+The API is documented in [api/openapi.json](api/openapi.json) (OpenAPI 3.1). Use it to generate typed clients for the frontend or other consumers.
+
 ## Project structure
 
 ```
 logtailr/
+├── api/
+│   └── openapi.json        # OpenAPI 3.1 spec
 ├── cmd/                    # CLI commands (cobra)
 │   ├── root.go
 │   └── tail.go
 ├── internal/
+│   ├── api/                # REST API, Prometheus metrics, WebSocket hub
 │   ├── config/             # YAML config loader + validation
 │   ├── filter/             # Level and regex filtering
 │   ├── health/             # Source health monitoring

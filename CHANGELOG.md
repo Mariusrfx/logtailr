@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-09
+
+### Added
+- **F4.1 REST API**: HTTP API server with health endpoints (`/health`, `/health/sources`, `/health/sources/:name`), config endpoint (`/config` with secret sanitization), CORS support
+- **F4.2 Prometheus Metrics**: `/metrics` endpoint with `logtailr_logs_total` (by source/level), `logtailr_source_healthy` (by source/status), `logtailr_source_errors_total`, `logtailr_processing_duration_seconds`, `logtailr_active_sources`, `logtailr_websocket_clients`
+- **F4.4 WebSocket Stream**: Real-time log streaming via `ws://host:port/ws/logs` with optional query filters (`?level=error&source=app.log`), ping/pong keepalive, per-client buffering
+- **CLI flags**: `--api` to enable API server, `--api-port` to set port (default 8080)
+- **Log Hub**: Broadcast hub for fan-out to WebSocket clients with level and source filtering
+- **OpenAPI 3.1 spec**: Full API specification at `api/openapi.json` for typed client generation
+
+### Security
+- API config endpoint sanitizes passwords and webhook URLs
+- WebSocket message size limited to 512 bytes (read), write deadlines enforced
+- HTTP server hardened: ReadHeaderTimeout, WriteTimeout, IdleTimeout
+
+## [0.4.0] - 2026-03-09
+
 ### Security
 - **CRITICAL**: Command injection prevention — Docker container names and journalctl unit names are now validated against strict allowlist (`^[a-zA-Z0-9][a-zA-Z0-9._:@-]*$`) before passing to `os/exec`
 - **HIGH**: Path traversal fix in `FileWriter` — output paths are resolved with `filepath.Abs` and directory existence is verified
@@ -15,8 +32,6 @@
 - **MEDIUM**: Retry backoff capped at 30s to prevent indefinite blocking
 - **MEDIUM**: JSON parser uses streaming decoder instead of full `json.Unmarshal`
 - **LOW**: Regex pattern length limited to 1024 characters to prevent excessive memory usage
-
-## [0.4.0] - 2026-03-09
 
 ### Added
 - **F3.2 OpenSearch/Elasticsearch Writer**: Bulk insert with configurable batch size and flush interval, basic auth, TLS support, exponential backoff retry, date-based index patterns (`%{+YYYY.MM.dd}`), round-robin host selection

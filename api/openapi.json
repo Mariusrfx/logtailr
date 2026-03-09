@@ -1,0 +1,333 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Logtailr API",
+    "description": "REST API for the Logtailr concurrent multi-source log aggregator. Provides health monitoring, source status, configuration inspection, Prometheus metrics, and real-time log streaming via WebSocket.",
+    "version": "0.5.0",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development server (default --api-port)"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Overall health status",
+        "description": "Returns the aggregate health status of all log sources, with counts by status category.",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthOverview" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/sources": {
+      "get": {
+        "operationId": "getHealthSources",
+        "summary": "All sources health status",
+        "description": "Returns detailed health information for every registered log source.",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "List of source health statuses",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SourceList" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/sources/{name}": {
+      "get": {
+        "operationId": "getHealthSource",
+        "summary": "Single source health status",
+        "description": "Returns detailed health information for a specific log source.",
+        "tags": ["Health"],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Source name as defined in the config",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Source health detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SourceHealth" }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "get": {
+        "operationId": "getConfig",
+        "summary": "Current configuration",
+        "description": "Returns the active configuration with secrets redacted (passwords replaced with '***', webhook URLs hidden).",
+        "tags": ["Config"],
+        "responses": {
+          "200": {
+            "description": "Sanitized configuration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Config" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "summary": "Prometheus metrics",
+        "description": "Returns all metrics in Prometheus text exposition format.",
+        "tags": ["Metrics"],
+        "responses": {
+          "200": {
+            "description": "Prometheus metrics",
+            "content": {
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ws/logs": {
+      "get": {
+        "operationId": "streamLogs",
+        "summary": "WebSocket log stream",
+        "description": "Upgrades to a WebSocket connection that streams log lines in real-time as JSON objects. Supports optional query parameter filters for level and source.",
+        "tags": ["WebSocket"],
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "description": "Minimum log level filter (debug, info, warn, error, fatal). Only logs at this level or above are sent.",
+            "schema": {
+              "type": "string",
+              "enum": ["debug", "info", "warn", "error", "fatal"]
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "description": "Filter by source name. Only logs from this source are sent.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket upgrade successful. Each message is a JSON-encoded LogLine."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthOverview": {
+        "type": "object",
+        "required": ["status", "timestamp", "uptime", "sources"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "unhealthy"],
+            "description": "Aggregate status: healthy (all sources OK), degraded (some degraded), unhealthy (any failed)"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uptime": {
+            "type": "string",
+            "description": "Server uptime in Go duration format (e.g. '2h30m15s')"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/SourceCounts"
+          }
+        }
+      },
+      "SourceCounts": {
+        "type": "object",
+        "required": ["total", "healthy", "degraded", "failed", "stopped"],
+        "properties": {
+          "total": { "type": "integer" },
+          "healthy": { "type": "integer" },
+          "degraded": { "type": "integer" },
+          "failed": { "type": "integer" },
+          "stopped": { "type": "integer" }
+        }
+      },
+      "SourceList": {
+        "type": "object",
+        "required": ["sources"],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SourceHealth" }
+          }
+        }
+      },
+      "SourceHealth": {
+        "type": "object",
+        "required": ["name", "status", "error_count", "last_update", "uptime"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Source name as defined in config"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "failed", "stopped", "starting"],
+            "description": "Current health status"
+          },
+          "error_count": {
+            "type": "integer",
+            "description": "Total errors since source started"
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Most recent error message (omitted if no errors)"
+          },
+          "last_update": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of last status change"
+          },
+          "uptime": {
+            "type": "string",
+            "description": "Time since source was registered"
+          }
+        }
+      },
+      "LogLine": {
+        "type": "object",
+        "required": ["timestamp", "level", "message", "source"],
+        "description": "A parsed log line, sent via WebSocket as JSON",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["debug", "info", "warn", "error", "fatal"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "Name of the source that produced this log"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Extra fields extracted from structured logs (JSON, logfmt)"
+          }
+        }
+      },
+      "Config": {
+        "type": "object",
+        "description": "Sanitized application configuration (secrets redacted)",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "Present when running in single-file mode (no config file)"
+          },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SourceConfig" }
+          },
+          "global": { "$ref": "#/components/schemas/GlobalConfig" },
+          "outputs_opensearch": {
+            "type": "object",
+            "description": "OpenSearch output config (password redacted)"
+          },
+          "outputs_webhook": {
+            "type": "object",
+            "description": "Webhook output config (URL redacted)"
+          }
+        }
+      },
+      "SourceConfig": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["file", "docker", "journalctl", "stdin"]
+          },
+          "path": { "type": "string", "description": "File path (type=file)" },
+          "container": { "type": "string", "description": "Container name (type=docker)" },
+          "unit": { "type": "string", "description": "Systemd unit (type=journalctl)" },
+          "follow": { "type": "boolean" },
+          "parser": {
+            "type": "string",
+            "enum": ["json", "logfmt", "text", ""]
+          }
+        }
+      },
+      "GlobalConfig": {
+        "type": "object",
+        "properties": {
+          "level": { "type": "string" },
+          "regex": { "type": "string" },
+          "output": { "type": "string" },
+          "output_path": { "type": "string" },
+          "show_health": { "type": "boolean" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Health", "description": "Health monitoring endpoints" },
+    { "name": "Config", "description": "Configuration inspection" },
+    { "name": "Metrics", "description": "Prometheus metrics export" },
+    { "name": "WebSocket", "description": "Real-time log streaming" }
+  ]
+}

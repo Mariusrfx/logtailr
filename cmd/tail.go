@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"logtailr/internal/api"
 	"logtailr/internal/config"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
@@ -40,6 +41,9 @@ var (
 	outputPath  string
 	showHealth  bool
 	healthEvery int
+	apiEnabled  bool
+	apiPort     int
+	apiAddr     string
 )
 
 var tailCmd = &cobra.Command{
@@ -63,11 +67,14 @@ func init() {
 	tailCmd.Flags().StringVar(&outputPath, "output-path", "", "Output file path (required when --output=file)")
 	tailCmd.Flags().BoolVar(&showHealth, "show-health", false, "Show health status of sources")
 	tailCmd.Flags().IntVar(&healthEvery, "health-every", 0, "Show health updates every N seconds (0 = disabled)")
+	tailCmd.Flags().BoolVar(&apiEnabled, "api", false, "Enable REST API and WebSocket server")
+	tailCmd.Flags().IntVar(&apiPort, "api-port", 8080, "API server port (1024-65535)")
+	tailCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1", "API server bind address")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
 	// Build source list: either from --config or from --file
-	sources, outputsCfg, err := buildSources(cmd)
+	sources, fullCfg, outputsCfg, err := buildSources(cmd)
 	if err != nil {
 		return err
 	}
@@ -106,6 +113,22 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = writer.Close() }()
 
+	// Start API server if enabled
+	var apiServer *api.Server
+	if apiEnabled {
+		if apiPort < 1024 || apiPort > 65535 {
+			return fmt.Errorf("--api-port must be between 1024 and 65535, got %d", apiPort)
+		}
+		listenAddr := fmt.Sprintf("%s:%d", apiAddr, apiPort)
+		apiServer = api.NewServer(api.ServerConfig{
+			Addr:    listenAddr,
+			Monitor: healthMonitor,
+			Config:  fullCfg,
+		})
+		apiServer.Start()
+		defer func() { _ = apiServer.Stop() }()
+	}
+
 	// Shared channels — all tailers write to the same pipeline
 	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
 	errBufSize := min(errChannelBuffer*len(sources), maxChannelSize)
@@ -132,7 +155,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Run the pipeline (blocks until ctx is cancelled)
-	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer)
 
 	// Stop all tailers
 	for _, t := range tailers {
@@ -142,12 +165,12 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	return result
 }
 
-func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.OutputsConfig, error) {
+func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *config.OutputsConfig, error) {
 	// If --config is set, load from YAML
 	if cfgFile != "" {
 		cfg, err := config.LoadConfig(cfgFile)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		// Apply global config overrides from flags if set
 		if cfg.Global.Level != "" && !cmd.Flags().Changed("level") {
@@ -165,17 +188,17 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.OutputsCo
 		if cfg.Global.ShowHealth {
 			showHealth = true
 		}
-		return cfg.Sources, &cfg.Outputs, nil
+		return cfg.Sources, cfg, &cfg.Outputs, nil
 	}
 
 	// Otherwise, require --file for single-source mode
 	if filePath == "" {
-		return nil, nil, fmt.Errorf("either --file or --config is required")
+		return nil, nil, nil, fmt.Errorf("either --file or --config is required")
 	}
 
 	absPath, err := validateFilePath(filePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	return []logline.SourceConfig{{
@@ -184,7 +207,7 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.OutputsCo
 		Path:   absPath,
 		Follow: follow,
 		Parser: parserFlag,
-	}}, nil, nil
+	}}, nil, nil, nil
 }
 
 func validateFilePath(path string) (string, error) {
@@ -228,6 +251,7 @@ func runPipeline(
 	regexFilter *filter.RegexFilter,
 	writer output.Writer,
 	healthMonitor *health.Monitor,
+	apiServer *api.Server,
 ) error {
 	for {
 		select {
@@ -253,6 +277,13 @@ func runPipeline(
 				parsed.Source = raw.Source
 			}
 
+			// Record metrics before filtering (total processed)
+			if apiServer != nil {
+				safeSource := api.SanitizeLabel(parsed.Source, 128)
+				safeLevel := api.SanitizeLabel(parsed.Level, 16)
+				apiServer.Metrics().LogsTotal.WithLabelValues(safeSource, safeLevel).Inc()
+			}
+
 			// Filter: level
 			if !filter.ByLevel(parsed, level) {
 				continue
@@ -266,6 +297,11 @@ func runPipeline(
 			// Output
 			if err := writer.Write(parsed); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
+			}
+
+			// Broadcast to WebSocket clients (after filtering)
+			if apiServer != nil {
+				apiServer.Hub().Broadcast(parsed)
 			}
 		}
 	}
