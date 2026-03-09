@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Writer is the interface for all output destinations.
@@ -206,6 +205,3 @@ func FormatLogLine(line *logline.LogLine) string {
 	level := strings.ToUpper(line.Level)
 	return fmt.Sprintf("[%s] [%s] %s: %s", ts, line.Source, level, line.Message)
 }
-
-// TimestampNow is a helper for tests to control time. Defaults to time.Now.
-var TimestampNow = time.Now
