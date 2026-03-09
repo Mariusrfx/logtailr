@@ -15,17 +15,17 @@ func newTestLine(level, message string) *logline.LogLine {
 	}
 }
 
-func TestFilterByLevel_DebugShowsAll(t *testing.T) {
+func TestByLevel_DebugShowsAll(t *testing.T) {
 	levels := []string{"debug", "info", "warn", "error", "fatal"}
 	for _, lvl := range levels {
 		line := newTestLine(lvl, "test")
-		if !FilterByLevel(line, "debug") {
-			t.Errorf("FilterByLevel(%q, debug) = false, want true", lvl)
+		if !ByLevel(line, "debug") {
+			t.Errorf("ByLevel(%q, debug) = false, want true", lvl)
 		}
 	}
 }
 
-func TestFilterByLevel_ErrorShowsOnlyErrorAndFatal(t *testing.T) {
+func TestByLevel_ErrorShowsOnlyErrorAndFatal(t *testing.T) {
 	tests := []struct {
 		level string
 		want  bool
@@ -40,15 +40,15 @@ func TestFilterByLevel_ErrorShowsOnlyErrorAndFatal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.level, func(t *testing.T) {
 			line := newTestLine(tt.level, "test")
-			got := FilterByLevel(line, "error")
+			got := ByLevel(line, "error")
 			if got != tt.want {
-				t.Errorf("FilterByLevel(%q, error) = %v, want %v", tt.level, got, tt.want)
+				t.Errorf("ByLevel(%q, error) = %v, want %v", tt.level, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestFilterByLevel_WarnShowsWarnErrorFatal(t *testing.T) {
+func TestByLevel_WarnShowsWarnErrorFatal(t *testing.T) {
 	tests := []struct {
 		level string
 		want  bool
@@ -63,70 +63,70 @@ func TestFilterByLevel_WarnShowsWarnErrorFatal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.level, func(t *testing.T) {
 			line := newTestLine(tt.level, "test")
-			got := FilterByLevel(line, "warn")
+			got := ByLevel(line, "warn")
 			if got != tt.want {
-				t.Errorf("FilterByLevel(%q, warn) = %v, want %v", tt.level, got, tt.want)
+				t.Errorf("ByLevel(%q, warn) = %v, want %v", tt.level, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestFilterByLevel_EmptyMinLevel(t *testing.T) {
+func TestByLevel_EmptyMinLevel(t *testing.T) {
 	line := newTestLine("debug", "test")
-	if !FilterByLevel(line, "") {
-		t.Error("FilterByLevel with empty minLevel should return true")
+	if !ByLevel(line, "") {
+		t.Error("ByLevel with empty minLevel should return true")
 	}
 }
 
-func TestFilterByLevel_InvalidMinLevel(t *testing.T) {
+func TestByLevel_InvalidMinLevel(t *testing.T) {
 	line := newTestLine("info", "test")
-	if !FilterByLevel(line, "invalid") {
-		t.Error("FilterByLevel with invalid minLevel should return true")
+	if !ByLevel(line, "invalid") {
+		t.Error("ByLevel with invalid minLevel should return true")
 	}
 }
 
-func TestFilterByRegex_Match(t *testing.T) {
+func TestByRegex_Match(t *testing.T) {
 	line := newTestLine("error", "Connection failed to database")
 
-	ok, err := FilterByRegex(line, "Connection.*database")
+	ok, err := ByRegex(line, "Connection.*database")
 	if err != nil {
-		t.Fatalf("FilterByRegex() error = %v", err)
+		t.Fatalf("ByRegex() error = %v", err)
 	}
 	if !ok {
-		t.Error("FilterByRegex() = false, want true")
+		t.Error("ByRegex() = false, want true")
 	}
 }
 
-func TestFilterByRegex_NoMatch(t *testing.T) {
+func TestByRegex_NoMatch(t *testing.T) {
 	line := newTestLine("info", "Server started successfully")
 
-	ok, err := FilterByRegex(line, "error|failed")
+	ok, err := ByRegex(line, "error|failed")
 	if err != nil {
-		t.Fatalf("FilterByRegex() error = %v", err)
+		t.Fatalf("ByRegex() error = %v", err)
 	}
 	if ok {
-		t.Error("FilterByRegex() = true, want false")
+		t.Error("ByRegex() = true, want false")
 	}
 }
 
-func TestFilterByRegex_EmptyPattern(t *testing.T) {
+func TestByRegex_EmptyPattern(t *testing.T) {
 	line := newTestLine("info", "anything")
 
-	ok, err := FilterByRegex(line, "")
+	ok, err := ByRegex(line, "")
 	if err != nil {
-		t.Fatalf("FilterByRegex() error = %v", err)
+		t.Fatalf("ByRegex() error = %v", err)
 	}
 	if !ok {
-		t.Error("FilterByRegex with empty pattern should return true")
+		t.Error("ByRegex with empty pattern should return true")
 	}
 }
 
-func TestFilterByRegex_InvalidRegex(t *testing.T) {
+func TestByRegex_InvalidRegex(t *testing.T) {
 	line := newTestLine("info", "test")
 
-	_, err := FilterByRegex(line, "[invalid")
+	_, err := ByRegex(line, "[invalid")
 	if err == nil {
-		t.Error("FilterByRegex() expected error for invalid regex, got nil")
+		t.Error("ByRegex() expected error for invalid regex, got nil")
 	}
 }
 
@@ -184,12 +184,12 @@ func TestFilter_Combined(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			line := newTestLine(tt.level, tt.message)
-			got, err := Filter(line, tt.minLvl, tt.pattern)
+			got, err := Apply(line, tt.minLvl, tt.pattern)
 			if err != nil {
-				t.Fatalf("Filter() error = %v", err)
+				t.Fatalf("Apply() error = %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("Filter() = %v, want %v", got, tt.want)
+				t.Errorf("Apply() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -197,8 +197,8 @@ func TestFilter_Combined(t *testing.T) {
 
 func TestFilter_InvalidRegex(t *testing.T) {
 	line := newTestLine("error", "test")
-	_, err := Filter(line, "debug", "[invalid")
+	_, err := Apply(line, "debug", "[invalid")
 	if err == nil {
-		t.Error("Filter() expected error for invalid regex, got nil")
+		t.Error("Apply() expected error for invalid regex, got nil")
 	}
 }

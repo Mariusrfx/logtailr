@@ -36,18 +36,18 @@ func (rf *RegexFilter) Match(text string) bool {
 	return rf.compiled.MatchString(text)
 }
 
-// Filter checks if a log line passes both level and regex filters.
+// Apply checks if a log line passes both level and regex filters.
 // Returns true if the line should be kept.
-func Filter(line *logline.LogLine, minLevel, pattern string) (bool, error) {
-	if !FilterByLevel(line, minLevel) {
+func Apply(line *logline.LogLine, minLevel, pattern string) (bool, error) {
+	if !ByLevel(line, minLevel) {
 		return false, nil
 	}
 
-	return FilterByRegex(line, pattern)
+	return ByRegex(line, pattern)
 }
 
-// FilterByLevel returns true if the log line's level is >= minLevel.
-func FilterByLevel(line *logline.LogLine, minLevel string) bool {
+// ByLevel returns true if the log line's level is >= minLevel.
+func ByLevel(line *logline.LogLine, minLevel string) bool {
 	if minLevel == "" {
 		return true
 	}
@@ -65,17 +65,17 @@ func FilterByLevel(line *logline.LogLine, minLevel string) bool {
 	return lineLevel >= minLevelNum
 }
 
-// FilterByRegex returns true if the log line's message matches the regex pattern.
+// ByRegex returns true if the log line's message matches the regex pattern.
 // An empty pattern matches everything.
-func FilterByRegex(line *logline.LogLine, pattern string) (bool, error) {
+func ByRegex(line *logline.LogLine, pattern string) (bool, error) {
 	if pattern == "" {
 		return true, nil
 	}
 
-	re, err := regexp.Compile(pattern)
+	rf, err := NewRegexFilter(pattern)
 	if err != nil {
 		return false, err
 	}
 
-	return re.MatchString(line.Message), nil
+	return rf.Match(line.Message), nil
 }
