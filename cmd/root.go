@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,7 +31,28 @@ func init() {
 
 func initConfig() {
 	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
+		// Validate config file path
+		absPath, err := filepath.Abs(cfgFile)
+		if err != nil {
+			fmt.Printf("Error: invalid config file path: %v\n", err)
+			os.Exit(1)
+		}
+		// Resolve symlinks to prevent traversal
+		absPath, err = filepath.EvalSymlinks(absPath)
+		if err != nil {
+			fmt.Printf("Error: cannot resolve config file path: %v\n", err)
+			os.Exit(1)
+		}
+		fi, err := os.Stat(absPath)
+		if err != nil {
+			fmt.Printf("Error: cannot access config file: %v\n", err)
+			os.Exit(1)
+		}
+		if !fi.Mode().IsRegular() {
+			fmt.Printf("Error: config path is not a regular file\n")
+			os.Exit(1)
+		}
+		viper.SetConfigFile(absPath)
 	} else {
 		viper.AddConfigPath(".")
 		viper.SetConfigName("config")
@@ -40,7 +62,6 @@ func initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		// Only exit if the error is NOT "file not found"
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			fmt.Printf("Error reading config file: %v\n", err)
 			os.Exit(1)

@@ -1,12 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"logtailr/internal/health"
+	"logtailr/pkg/logline"
 
 	"github.com/spf13/cobra"
 )
@@ -35,7 +42,7 @@ func init() {
 	rootCmd.AddCommand(tailCmd)
 
 	tailCmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to the log file to process")
-	tailCmd.Flags().StringVarP(&level, "level", "l", "info", "Minimum log level (debug, info, warn, error)")
+	tailCmd.Flags().StringVarP(&level, "level", "l", "info", "Minimum log level (debug, info, warn, error, fatal)")
 	tailCmd.Flags().StringVarP(&regex, "regex", "r", "", "Optional regex pattern to filter messages")
 	tailCmd.Flags().BoolVar(&showHealth, "show-health", false, "Show health status of sources")
 	tailCmd.Flags().IntVar(&healthEvery, "health-every", 0, "Show health updates every N seconds (0 = disabled)")
@@ -46,6 +53,48 @@ func runTail(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("the --file flag is required")
 	}
 
+	// Validate file path: resolve to absolute and ensure it's a regular file
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	// Resolve symlinks to prevent symlink-based traversal
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return fmt.Errorf("cannot resolve file path: %w", err)
+	}
+	fi, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("cannot access file: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("path is not a regular file")
+	}
+	filePath = absPath
+
+	// Validate log level
+	if _, ok := logline.LogLevels[strings.ToLower(level)]; !ok {
+		return fmt.Errorf("invalid log level %q: must be one of debug, info, warn, error, fatal", level)
+	}
+
+	// Validate regex pattern early (compile once, fail fast)
+	if regex != "" {
+		if _, err := regexp.Compile(regex); err != nil {
+			return fmt.Errorf("invalid regex pattern: %w", err)
+		}
+	}
+
+	// Setup context with signal handling for graceful shutdown
+	ctx, cancel := context.WithCancel(cmd.Context())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cancel()
+	}()
+
 	healthMonitor := health.NewMonitor()
 	healthMonitor.RegisterSource(filePath)
 	healthMonitor.MarkHealthy(filePath)
@@ -54,7 +103,7 @@ func runTail(cmd *cobra.Command, args []string) error {
 
 	if showHealth {
 		printHealthStatus(healthMonitor)
-		startHealthUpdater(healthMonitor)
+		startHealthUpdater(ctx, healthMonitor)
 	}
 
 	// TODO: Logic orchestration will go here
@@ -63,7 +112,7 @@ func runTail(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func startHealthUpdater(monitor *health.Monitor) {
+func startHealthUpdater(ctx context.Context, monitor *health.Monitor) {
 	if healthEvery <= 0 {
 		return
 	}
@@ -72,9 +121,14 @@ func startHealthUpdater(monitor *health.Monitor) {
 		ticker := time.NewTicker(time.Duration(healthEvery) * time.Second)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			fmt.Println("\n--- Health Update ---")
-			printHealthStatus(monitor)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fmt.Println("\n--- Health Update ---")
+				printHealthStatus(monitor)
+			}
 		}
 	}()
 }

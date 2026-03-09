@@ -13,6 +13,13 @@ import (
 var (
 	ErrEmptyLine     = errors.New("empty line")
 	ErrInvalidFormat = errors.New("invalid format")
+	ErrLineTooLarge  = errors.New("log line exceeds maximum size")
+	ErrTooManyFields = errors.New("too many fields in log entry")
+)
+
+const (
+	maxLineSize    = 256 * 1024 // 256KB max per log line
+	maxFieldsCount = 100        // max JSON/logfmt fields per entry
 )
 
 // Key aliases for common log fields
@@ -99,6 +106,10 @@ func (p *Parser) ParseJSON(line string) (*logline.LogLine, error) {
 		return nil, err
 	}
 
+	if len(raw) > maxFieldsCount {
+		return nil, fmt.Errorf("%w: got %d, max %d", ErrTooManyFields, len(raw), maxFieldsCount)
+	}
+
 	ll := p.newLogLine()
 	ll.Timestamp = extractTimestamp(raw, timestampKeys)
 	ll.Level = extractLevel(raw, levelKeys)
@@ -115,6 +126,11 @@ func (p *Parser) ParseLogfmt(line string) (*logline.LogLine, error) {
 	}
 
 	pairs := parseLogfmtPairs(line)
+
+	if len(pairs) > maxFieldsCount {
+		return nil, fmt.Errorf("%w: got %d, max %d", ErrTooManyFields, len(pairs), maxFieldsCount)
+	}
+
 	ll := p.newLogLine()
 
 	ll.Timestamp = extractTimestampFromPairs(pairs, timestampKeys)
@@ -215,6 +231,9 @@ func (p *Parser) parseLevelOnly(line string, ll *logline.LogLine) bool {
 func validateLine(line string) error {
 	if strings.TrimSpace(line) == "" {
 		return ErrEmptyLine
+	}
+	if len(line) > maxLineSize {
+		return fmt.Errorf("%w: %d bytes", ErrLineTooLarge, len(line))
 	}
 	return nil
 }

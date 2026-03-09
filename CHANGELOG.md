@@ -7,6 +7,8 @@
 - **Core Types**: `LogLine` and `SourceConfig` structs with parser/source constants
 - **Tailer Interface**: Base interface with health integration and reporting methods
 - **F1.1 Parser**: Multi-format log parser (JSON, logfmt, text) with auto-detection, timestamp parsing, and level normalization
+- **F1.2 Filter**: Log filtering by severity level (`debug < info < warn < error < fatal`) and regex pattern matching with combined filter support
+- **F1.3 FileTailer**: Real file tailing with fsnotify-based follow mode, logrotate detection with auto-reopen, permission/missing file error handling, and full health monitor integration
 
 ## [0.1.0] - 2026-03-03
 

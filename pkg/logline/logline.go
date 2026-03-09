@@ -16,11 +16,11 @@ type LogLine struct {
 // SourceConfig defines the configuration for a log source
 type SourceConfig struct {
 	Name      string `mapstructure:"name"`
-	Type      string `mapstructure:"type"` // "file", "docker", "journalctl"
+	Type      string `mapstructure:"type"`
 	Path      string `mapstructure:"path"`
 	Container string `mapstructure:"container"`
 	Follow    bool   `mapstructure:"follow"`
-	Parser    string `mapstructure:"parser"` // "json", "logfmt", "text"
+	Parser    string `mapstructure:"parser"`
 }
 
 // Parser type constants
