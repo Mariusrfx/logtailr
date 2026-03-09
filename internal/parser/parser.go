@@ -53,9 +53,9 @@ var timestampFormats = []string{
 // Precompiled regex patterns
 var (
 	// [2024-01-15 10:30:00] ERROR: message
-	patternBracketed = regexp.MustCompile(`^\[(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}[^\]]*)\]\s*(\w+):?\s*(.*)$`)
+	patternBracketed = regexp.MustCompile(`^\[(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}[^]]*)]\s*(\w+):?\s*(.*)$`)
 	// 2024-01-15 10:30:00 ERROR message
-	patternSpaced = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}[^\s]*)\s+(\w+)\s+(.*)$`)
+	patternSpaced = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}\S*)\s+(\w+)\s+(.*)$`)
 	// ERROR: message (no timestamp)
 	patternLevelOnly = regexp.MustCompile(`^(\w+):?\s+(.*)$`)
 	// logfmt key=value pattern
@@ -101,8 +101,10 @@ func (p *Parser) ParseJSON(line string) (*logline.LogLine, error) {
 		return nil, err
 	}
 
+	// Use streaming decoder to avoid full in-memory copy
 	var raw map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(line))
+	if err := decoder.Decode(&raw); err != nil {
 		return nil, err
 	}
 

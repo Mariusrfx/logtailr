@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"logtailr/pkg/logline"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 type Config struct {
 	Sources []logline.SourceConfig `mapstructure:"sources"`
 	Global  GlobalConfig           `mapstructure:"global"`
+	Outputs OutputsConfig          `mapstructure:"outputs"`
 }
 
 // GlobalConfig holds global settings.
@@ -23,6 +26,34 @@ type GlobalConfig struct {
 	Output     string `mapstructure:"output"`
 	OutputPath string `mapstructure:"output_path"`
 	ShowHealth bool   `mapstructure:"show_health"`
+}
+
+// OutputsConfig holds configuration for output destinations.
+type OutputsConfig struct {
+	OpenSearch *OpenSearchOutputConfig `mapstructure:"opensearch"`
+	Webhook    *WebhookOutputConfig    `mapstructure:"webhook"`
+}
+
+// OpenSearchOutputConfig holds OpenSearch connection settings.
+type OpenSearchOutputConfig struct {
+	Enabled       bool     `mapstructure:"enabled"`
+	Hosts         []string `mapstructure:"hosts"`
+	Index         string   `mapstructure:"index"`
+	Username      string   `mapstructure:"username"`
+	Password      string   `mapstructure:"password"`
+	BulkSize      int      `mapstructure:"bulk_size"`
+	FlushInterval string   `mapstructure:"flush_interval"`
+	TLSSkipVerify bool     `mapstructure:"tls_skip_verify"`
+	MaxRetries    int      `mapstructure:"max_retries"`
+}
+
+// WebhookOutputConfig holds webhook settings.
+type WebhookOutputConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	URL          string `mapstructure:"url"`
+	MinLevel     string `mapstructure:"min_level"`
+	BatchSize    int    `mapstructure:"batch_size"`
+	BatchTimeout string `mapstructure:"batch_timeout"`
 }
 
 var validSourceTypes = map[string]bool{
@@ -140,6 +171,76 @@ func ValidateConfig(cfg *Config) error {
 
 	if cfg.Global.Output == "file" && cfg.Global.OutputPath == "" {
 		return fmt.Errorf("config: output type file requires output_path")
+	}
+
+	if err := validateOutputsConfig(&cfg.Outputs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateOutputsConfig(outputs *OutputsConfig) error {
+	if outputs.OpenSearch != nil && outputs.OpenSearch.Enabled {
+		osCfg := outputs.OpenSearch
+		if len(osCfg.Hosts) == 0 {
+			return fmt.Errorf("config: opensearch requires at least one host")
+		}
+		if osCfg.Index == "" {
+			return fmt.Errorf("config: opensearch requires an index")
+		}
+		for _, h := range osCfg.Hosts {
+			if err := validateExternalURL(h); err != nil {
+				return fmt.Errorf("config: opensearch host %q: %w", h, err)
+			}
+		}
+	}
+
+	if outputs.Webhook != nil && outputs.Webhook.Enabled {
+		wh := outputs.Webhook
+		if wh.URL == "" {
+			return fmt.Errorf("config: webhook requires a url")
+		}
+		if err := validateExternalURL(wh.URL); err != nil {
+			return fmt.Errorf("config: webhook url: %w", err)
+		}
+		if wh.MinLevel != "" {
+			if _, ok := logline.LogLevels[strings.ToLower(wh.MinLevel)]; !ok {
+				return fmt.Errorf("config: webhook has invalid min_level %q", wh.MinLevel)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateExternalURL checks that a URL is valid and not targeting internal/private networks (SSRF prevention).
+func validateExternalURL(rawURL string) error {
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return fmt.Errorf("must start with http:// or https://")
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("URL must have a hostname")
+	}
+
+	// Check for well-known dangerous hostnames
+	if host == "localhost" || host == "metadata.google.internal" {
+		return fmt.Errorf("internal hostname %q not allowed", host)
+	}
+
+	// Check if it's an IP address pointing to internal networks
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("internal/private IP address %q not allowed", host)
+		}
 	}
 
 	return nil

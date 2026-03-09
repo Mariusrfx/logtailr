@@ -27,6 +27,7 @@ const (
 	maxSourceNameLen = 27
 	logChannelBuffer = 100
 	errChannelBuffer = 10
+	maxChannelSize   = 10000
 )
 
 var (
@@ -66,7 +67,7 @@ func init() {
 
 func runTail(cmd *cobra.Command, _ []string) error {
 	// Build source list: either from --config or from --file
-	sources, err := buildSources(cmd)
+	sources, outputsCfg, err := buildSources(cmd)
 	if err != nil {
 		return err
 	}
@@ -99,15 +100,17 @@ func runTail(cmd *cobra.Command, _ []string) error {
 
 	// Initialize shared components
 	healthMonitor := health.NewMonitor()
-	writer, err := createWriter()
+	writer, err := createWriter(outputsCfg)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = writer.Close() }()
 
 	// Shared channels — all tailers write to the same pipeline
-	logChan := make(chan *logline.LogLine, logChannelBuffer*len(sources))
-	errChan := make(chan error, errChannelBuffer*len(sources))
+	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
+	errBufSize := min(errChannelBuffer*len(sources), maxChannelSize)
+	logChan := make(chan *logline.LogLine, logBufSize)
+	errChan := make(chan error, errBufSize)
 
 	// Start a tailer for each source
 	var tailers []tailer.Tailer
@@ -139,12 +142,12 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	return result
 }
 
-func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, error) {
+func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.OutputsConfig, error) {
 	// If --config is set, load from YAML
 	if cfgFile != "" {
 		cfg, err := config.LoadConfig(cfgFile)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// Apply global config overrides from flags if set
 		if cfg.Global.Level != "" && !cmd.Flags().Changed("level") {
@@ -162,17 +165,17 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, error) {
 		if cfg.Global.ShowHealth {
 			showHealth = true
 		}
-		return cfg.Sources, nil
+		return cfg.Sources, &cfg.Outputs, nil
 	}
 
 	// Otherwise, require --file for single-source mode
 	if filePath == "" {
-		return nil, fmt.Errorf("either --file or --config is required")
+		return nil, nil, fmt.Errorf("either --file or --config is required")
 	}
 
 	absPath, err := validateFilePath(filePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return []logline.SourceConfig{{
@@ -181,7 +184,7 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, error) {
 		Path:   absPath,
 		Follow: follow,
 		Parser: parserFlag,
-	}}, nil
+	}}, nil, nil
 }
 
 func validateFilePath(path string) (string, error) {
@@ -208,9 +211,9 @@ func createTailer(src logline.SourceConfig, monitor *health.Monitor) (tailer.Tai
 	case logline.SourceTypeFile:
 		return tailer.NewFileTailer(src.Path, src.Follow, monitor), nil
 	case logline.SourceTypeDocker:
-		return tailer.NewDockerTailer(src.Container, src.Follow, monitor), nil
+		return tailer.NewDockerTailer(src.Container, src.Follow, monitor)
 	case logline.SourceTypeJournalctl:
-		return tailer.NewJournalctlTailer(src.Unit, src.Follow, monitor), nil
+		return tailer.NewJournalctlTailer(src.Unit, src.Follow, monitor)
 	case logline.SourceTypeStdin:
 		return tailer.NewStdinTailer(monitor), nil
 	default:
@@ -294,15 +297,64 @@ func sourceDetail(src logline.SourceConfig) string {
 	}
 }
 
-func createWriter() (output.Writer, error) {
+func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
+	var primary output.Writer
 	switch outputFlag {
 	case "json":
-		return output.NewJSONWriter(os.Stdout), nil
+		primary = output.NewJSONWriter(os.Stdout)
 	case "file":
-		return output.NewFileWriter(outputPath)
+		fw, err := output.NewFileWriter(outputPath)
+		if err != nil {
+			return nil, err
+		}
+		primary = fw
 	default:
-		return output.NewConsoleWriter(), nil
+		primary = output.NewConsoleWriter()
 	}
+
+	if outputsCfg == nil {
+		return primary, nil
+	}
+
+	// Collect additional writers from outputs config
+	writers := []output.Writer{primary}
+
+	if outputsCfg.OpenSearch != nil && outputsCfg.OpenSearch.Enabled {
+		osCfg := outputsCfg.OpenSearch
+		ow, err := output.NewOpenSearchWriter(output.OpenSearchConfig{
+			Hosts:         osCfg.Hosts,
+			Index:         osCfg.Index,
+			Username:      osCfg.Username,
+			Password:      osCfg.Password,
+			BulkSize:      osCfg.BulkSize,
+			FlushInterval: osCfg.FlushInterval,
+			TLSSkipVerify: osCfg.TLSSkipVerify,
+			MaxRetries:    osCfg.MaxRetries,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("opensearch output: %w", err)
+		}
+		writers = append(writers, ow)
+	}
+
+	if outputsCfg.Webhook != nil && outputsCfg.Webhook.Enabled {
+		wh := outputsCfg.Webhook
+		ww, err := output.NewWebhookWriter(output.WebhookConfig{
+			URL:          wh.URL,
+			MinLevel:     wh.MinLevel,
+			BatchSize:    wh.BatchSize,
+			BatchTimeout: wh.BatchTimeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("webhook output: %w", err)
+		}
+		writers = append(writers, ww)
+	}
+
+	if len(writers) == 1 {
+		return primary, nil
+	}
+	return output.NewMultiWriter(writers...), nil
 }
 
 func startHealthUpdater(ctx context.Context, monitor *health.Monitor) {

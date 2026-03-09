@@ -2,8 +2,10 @@ package tailer
 
 import (
 	"context"
+	"fmt"
 	"logtailr/internal/health"
 	"logtailr/pkg/logline"
+	"regexp"
 )
 
 // Tailer interface para implementaciones de diferentes tipos de sources
@@ -55,4 +57,22 @@ func (b *BaseTailer) ReportStopped() {
 // GetSourceName retorna el nombre de la fuente
 func (b *BaseTailer) GetSourceName() string {
 	return b.SourceName
+}
+
+// safeNamePattern validates names passed to external commands (container names, unit names).
+// Allows alphanumeric, dash, underscore, dot, colon, and @ (for systemd units).
+var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:@-]*$`)
+
+// ValidateExternalName checks that a name is safe to pass to external commands.
+func ValidateExternalName(name, kind string) error {
+	if name == "" {
+		return fmt.Errorf("%s name cannot be empty", kind)
+	}
+	if len(name) > 256 {
+		return fmt.Errorf("%s name too long (max 256 chars)", kind)
+	}
+	if !safeNamePattern.MatchString(name) {
+		return fmt.Errorf("%s name %q contains invalid characters", kind, name)
+	}
+	return nil
 }

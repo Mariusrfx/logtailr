@@ -19,7 +19,10 @@ type JournalctlTailer struct {
 }
 
 // NewJournalctlTailer creates a new JournalctlTailer.
-func NewJournalctlTailer(unit string, follow bool, healthMonitor *health.Monitor) *JournalctlTailer {
+func NewJournalctlTailer(unit string, follow bool, healthMonitor *health.Monitor) (*JournalctlTailer, error) {
+	if err := ValidateExternalName(unit, "unit"); err != nil {
+		return nil, err
+	}
 	name := "journalctl:" + unit
 	jt := &JournalctlTailer{
 		BaseTailer: BaseTailer{
@@ -34,7 +37,7 @@ func NewJournalctlTailer(unit string, follow bool, healthMonitor *health.Monitor
 		healthMonitor.RegisterSource(name)
 	}
 
-	return jt
+	return jt, nil
 }
 
 // Start begins reading journal logs.

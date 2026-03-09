@@ -12,11 +12,17 @@ type RegexFilter struct {
 	compiled *regexp.Regexp
 }
 
+const maxRegexPatternLen = 1024
+
 // NewRegexFilter compiles and validates a regex pattern upfront.
-// Returns an error if the pattern is invalid. An empty pattern matches everything.
+// Returns an error if the pattern is invalid or too long. An empty pattern matches everything.
 func NewRegexFilter(pattern string) (*RegexFilter, error) {
 	if pattern == "" {
 		return &RegexFilter{}, nil
+	}
+
+	if len(pattern) > maxRegexPatternLen {
+		return nil, fmt.Errorf("regex pattern too long (%d chars, max %d)", len(pattern), maxRegexPatternLen)
 	}
 
 	re, err := regexp.Compile(pattern)

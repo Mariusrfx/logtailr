@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Security
+- **CRITICAL**: Command injection prevention — Docker container names and journalctl unit names are now validated against strict allowlist (`^[a-zA-Z0-9][a-zA-Z0-9._:@-]*$`) before passing to `os/exec`
+- **HIGH**: Path traversal fix in `FileWriter` — output paths are resolved with `filepath.Abs` and directory existence is verified
+- **HIGH**: Channel buffer cap — shared log/error channels are now capped at 10,000 to prevent unbounded memory growth
+- **HIGH**: Credential sanitization — OpenSearch HTTP error responses no longer include server response body (may contain tokens)
+- **HIGH**: TLS minimum version enforced (TLS 1.2) on OpenSearch HTTP transport
+- **MEDIUM**: SSRF prevention — webhook and OpenSearch URLs are validated against internal/private IP ranges (loopback, RFC1918, link-local, cloud metadata endpoints)
+- **MEDIUM**: Flush errors in OpenSearch and webhook background loops are now reported to stderr instead of silently discarded
+- **MEDIUM**: HTTP response body reads are limited to 1MB in webhook writer to prevent memory exhaustion from malicious servers
+- **MEDIUM**: Webhook error messages no longer include the full endpoint URL
+- **MEDIUM**: Retry backoff capped at 30s to prevent indefinite blocking
+- **MEDIUM**: JSON parser uses streaming decoder instead of full `json.Unmarshal`
+- **LOW**: Regex pattern length limited to 1024 characters to prevent excessive memory usage
+
+## [0.4.0] - 2026-03-09
+
+### Added
+- **F3.2 OpenSearch/Elasticsearch Writer**: Bulk insert with configurable batch size and flush interval, basic auth, TLS support, exponential backoff retry, date-based index patterns (`%{+YYYY.MM.dd}`), round-robin host selection
+- **F3.4 Webhook Writer**: HTTP POST with batched payloads, configurable min_level filter, batch size/timeout, JSON payload with log summary text
+- **Multi-output support**: Config-driven output destinations via `outputs` section in YAML — OpenSearch, webhook, and primary output (console/json/file) run simultaneously through MultiWriter
+- **Config validation**: OpenSearch host URL scheme validation, webhook URL validation, min_level validation for webhook
+
 ## [0.3.0] - 2026-03-09
 
 ### Added

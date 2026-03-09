@@ -6,6 +6,7 @@ import (
 	"io"
 	"logtailr/pkg/logline"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -141,8 +142,19 @@ type FileWriter struct {
 }
 
 // NewFileWriter creates a FileWriter that appends to the given file path.
+// The path is resolved to an absolute path and validated to prevent path traversal.
 func NewFileWriter(path string) (*FileWriter, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve output path: %w", err)
+	}
+	// Ensure parent directory exists and is not a symlink escape
+	dir := filepath.Dir(absPath)
+	if _, err := os.Stat(dir); err != nil {
+		return nil, fmt.Errorf("output directory does not exist: %w", err)
+	}
+
+	f, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open output file: %w", err)
 	}

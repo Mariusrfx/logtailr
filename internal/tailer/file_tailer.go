@@ -70,7 +70,7 @@ func (ft *FileTailer) run(ctx context.Context, out chan<- *logline.LogLine, errC
 		errChan <- fmt.Errorf("failed to open log source: %w", err)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	ft.ReportHealthy()
 
@@ -142,7 +142,7 @@ func (ft *FileTailer) followFile(ctx context.Context, file *os.File, reader *buf
 		errChan <- fmt.Errorf("failed to create file watcher: %w", err)
 		return
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	if err := watcher.Add(ft.path); err != nil {
 		ft.ReportFailed(err)

@@ -19,7 +19,10 @@ type DockerTailer struct {
 }
 
 // NewDockerTailer creates a new DockerTailer.
-func NewDockerTailer(container string, follow bool, healthMonitor *health.Monitor) *DockerTailer {
+func NewDockerTailer(container string, follow bool, healthMonitor *health.Monitor) (*DockerTailer, error) {
+	if err := ValidateExternalName(container, "container"); err != nil {
+		return nil, err
+	}
 	name := "docker:" + container
 	dt := &DockerTailer{
 		BaseTailer: BaseTailer{
@@ -34,7 +37,7 @@ func NewDockerTailer(container string, follow bool, healthMonitor *health.Monito
 		healthMonitor.RegisterSource(name)
 	}
 
-	return dt
+	return dt, nil
 }
 
 // Start begins reading container logs.
