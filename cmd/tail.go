@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"logtailr/internal/config"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
 	"logtailr/internal/output"
@@ -42,19 +43,21 @@ var (
 
 var tailCmd = &cobra.Command{
 	Use:   "tail",
-	Short: "Tail and parse logs from a source",
-	Long:  `Tail logs from a specific file with real-time parsing and filtering capabilities.`,
-	RunE:  runTail,
+	Short: "Tail and parse logs from multiple sources",
+	Long: `Tail logs from files, Docker containers, and journalctl simultaneously.
+
+Use --file for a single source or --config for multiple sources defined in YAML.`,
+	RunE: runTail,
 }
 
 func init() {
 	rootCmd.AddCommand(tailCmd)
 
-	tailCmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to the log file to process")
+	tailCmd.Flags().StringVarP(&filePath, "file", "f", "", "Path to a single log file (shortcut for simple usage)")
 	tailCmd.Flags().StringVarP(&level, "level", "l", "info", "Minimum log level (debug, info, warn, error, fatal)")
-	tailCmd.Flags().StringVarP(&regex, "regex", "r", "", "Optional regex pattern to filter messages")
-	tailCmd.Flags().BoolVar(&follow, "follow", true, "Follow the file for new lines (like tail -f)")
-	tailCmd.Flags().StringVarP(&parserFlag, "parser", "p", "", "Log format parser: json, logfmt, text (default: auto-detect)")
+	tailCmd.Flags().StringVarP(&regex, "regex", "r", "", "Regex pattern to filter messages")
+	tailCmd.Flags().BoolVar(&follow, "follow", true, "Follow sources for new lines")
+	tailCmd.Flags().StringVarP(&parserFlag, "parser", "p", "", "Log format: json, logfmt, text (default: auto-detect)")
 	tailCmd.Flags().StringVarP(&outputFlag, "output", "o", "console", "Output format: console, json, file")
 	tailCmd.Flags().StringVar(&outputPath, "output-path", "", "Output file path (required when --output=file)")
 	tailCmd.Flags().BoolVar(&showHealth, "show-health", false, "Show health status of sources")
@@ -62,45 +65,27 @@ func init() {
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
-	if filePath == "" {
-		return fmt.Errorf("the --file flag is required")
+	// Build source list: either from --config or from --file
+	sources, err := buildSources(cmd)
+	if err != nil {
+		return err
 	}
 
-	// Validate file path
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return fmt.Errorf("invalid file path: %w", err)
-	}
-	absPath, err = filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return fmt.Errorf("cannot resolve file path: %w", err)
-	}
-	fi, err := os.Stat(absPath)
-	if err != nil {
-		return fmt.Errorf("cannot access file: %w", err)
-	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("path is not a regular file")
-	}
-	filePath = absPath
-
-	// Validate log level
+	// Validate global flags
 	if _, ok := logline.LogLevels[strings.ToLower(level)]; !ok {
 		return fmt.Errorf("invalid log level %q: must be one of debug, info, warn, error, fatal", level)
 	}
 
-	// Validate and compile regex upfront
 	regexFilter, err := filter.NewRegexFilter(regex)
 	if err != nil {
 		return err
 	}
 
-	// Validate output flags
 	if outputFlag == "file" && outputPath == "" {
 		return fmt.Errorf("--output-path is required when --output=file")
 	}
 
-	// Setup context with signal handling
+	// Context with signal handling
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
@@ -112,39 +97,131 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		cancel()
 	}()
 
-	// Initialize components
+	// Initialize shared components
 	healthMonitor := health.NewMonitor()
-	logParser := parser.New(filePath)
 	writer, err := createWriter()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = writer.Close() }()
 
-	ft := tailer.NewFileTailer(filePath, follow, healthMonitor)
+	// Shared channels — all tailers write to the same pipeline
+	logChan := make(chan *logline.LogLine, logChannelBuffer*len(sources))
+	errChan := make(chan error, errChannelBuffer*len(sources))
 
-	fmt.Printf("Tailing %s | level>=%s | parser=%s | output=%s\n",
-		filePath, level, parserOrAuto(), outputFlag)
+	// Start a tailer for each source
+	var tailers []tailer.Tailer
+	for _, src := range sources {
+		t, err := createTailer(src, healthMonitor)
+		if err != nil {
+			return fmt.Errorf("source %q: %w", src.Name, err)
+		}
+		tailers = append(tailers, t)
+		t.Start(ctx, logChan, errChan)
+	}
+
+	// Print startup info
+	printStartupBanner(sources)
 
 	if showHealth {
 		printHealthStatus(healthMonitor)
 		startHealthUpdater(ctx, healthMonitor)
 	}
 
-	// Start the pipeline
-	logChan := make(chan *logline.LogLine, logChannelBuffer)
-	errChan := make(chan error, errChannelBuffer)
+	// Run the pipeline (blocks until ctx is cancelled)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor)
 
-	ft.Start(ctx, logChan, errChan)
+	// Stop all tailers
+	for _, t := range tailers {
+		_ = t.Stop()
+	}
 
-	return runPipeline(ctx, logChan, errChan, logParser, regexFilter, writer, healthMonitor)
+	return result
+}
+
+func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, error) {
+	// If --config is set, load from YAML
+	if cfgFile != "" {
+		cfg, err := config.LoadConfig(cfgFile)
+		if err != nil {
+			return nil, err
+		}
+		// Apply global config overrides from flags if set
+		if cfg.Global.Level != "" && !cmd.Flags().Changed("level") {
+			level = cfg.Global.Level
+		}
+		if cfg.Global.Regex != "" && regex == "" {
+			regex = cfg.Global.Regex
+		}
+		if cfg.Global.Output != "" && outputFlag == "console" {
+			outputFlag = cfg.Global.Output
+		}
+		if cfg.Global.OutputPath != "" && outputPath == "" {
+			outputPath = cfg.Global.OutputPath
+		}
+		if cfg.Global.ShowHealth {
+			showHealth = true
+		}
+		return cfg.Sources, nil
+	}
+
+	// Otherwise, require --file for single-source mode
+	if filePath == "" {
+		return nil, fmt.Errorf("either --file or --config is required")
+	}
+
+	absPath, err := validateFilePath(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return []logline.SourceConfig{{
+		Name:   absPath,
+		Type:   logline.SourceTypeFile,
+		Path:   absPath,
+		Follow: follow,
+		Parser: parserFlag,
+	}}, nil
+}
+
+func validateFilePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid file path: %w", err)
+	}
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve file path: %w", err)
+	}
+	fi, err := os.Stat(absPath)
+	if err != nil {
+		return "", fmt.Errorf("cannot access file: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("path is not a regular file")
+	}
+	return absPath, nil
+}
+
+func createTailer(src logline.SourceConfig, monitor *health.Monitor) (tailer.Tailer, error) {
+	switch src.Type {
+	case logline.SourceTypeFile:
+		return tailer.NewFileTailer(src.Path, src.Follow, monitor), nil
+	case logline.SourceTypeDocker:
+		return tailer.NewDockerTailer(src.Container, src.Follow, monitor), nil
+	case logline.SourceTypeJournalctl:
+		return tailer.NewJournalctlTailer(src.Unit, src.Follow, monitor), nil
+	case logline.SourceTypeStdin:
+		return tailer.NewStdinTailer(monitor), nil
+	default:
+		return nil, fmt.Errorf("unsupported source type %q", src.Type)
+	}
 }
 
 func runPipeline(
 	ctx context.Context,
 	logChan <-chan *logline.LogLine,
 	errChan <-chan error,
-	logParser *parser.Parser,
 	regexFilter *filter.RegexFilter,
 	writer output.Writer,
 	healthMonitor *health.Monitor,
@@ -164,30 +241,56 @@ func runPipeline(
 				return nil
 			}
 
-			// Parse: convert raw line into structured log
+			// Parse: use a per-source parser to detect format
+			logParser := parser.New(raw.Source)
 			parsed, err := logParser.Parse(raw.Message, parserFlag)
 			if err != nil {
-				// Unparseable lines pass through as-is
 				parsed = raw
 			} else {
 				parsed.Source = raw.Source
 			}
 
-			// Filter: check level
+			// Filter: level
 			if !filter.ByLevel(parsed, level) {
 				continue
 			}
 
-			// Filter: check regex
+			// Filter: regex
 			if !regexFilter.Match(parsed.Message) {
 				continue
 			}
 
-			// Output: write to destination
+			// Output
 			if err := writer.Write(parsed); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
 			}
 		}
+	}
+}
+
+func printStartupBanner(sources []logline.SourceConfig) {
+	fmt.Printf("Logtailr started | %d source(s) | level>=%s | output=%s\n", len(sources), level, outputFlag)
+	for _, src := range sources {
+		detail := sourceDetail(src)
+		fmt.Printf("  -> [%s] %s (%s)\n", src.Type, src.Name, detail)
+	}
+}
+
+func sourceDetail(src logline.SourceConfig) string {
+	switch src.Type {
+	case logline.SourceTypeFile:
+		if src.Follow {
+			return "follow"
+		}
+		return "read-once"
+	case logline.SourceTypeDocker:
+		return "container=" + src.Container
+	case logline.SourceTypeJournalctl:
+		return "unit=" + src.Unit
+	case logline.SourceTypeStdin:
+		return "pipe"
+	default:
+		return src.Type
 	}
 }
 
@@ -200,13 +303,6 @@ func createWriter() (output.Writer, error) {
 	default:
 		return output.NewConsoleWriter(), nil
 	}
-}
-
-func parserOrAuto() string {
-	if parserFlag == "" {
-		return "auto"
-	}
-	return parserFlag
 }
 
 func startHealthUpdater(ctx context.Context, monitor *health.Monitor) {

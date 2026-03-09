@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-09
+
+### Added
+- **F2.1 DockerTailer**: Read logs from Docker containers via `docker logs` with follow mode, stdout/stderr merge, and health monitoring
+- **F2.2 JournalctlTailer**: Read systemd journal logs via `journalctl -u <unit>` with follow mode, short-iso format, and health monitoring
+- **F2.4 StdinTailer**: Read logs from stdin for pipe usage (`cat app.log | logtailr tail`), clean EOF handling
+- **Multi-source pipeline**: Full orchestration in `cmd/tail.go` — config-driven or single-file mode, shared channels with backpressure, concurrent tailer startup, startup banner, graceful shutdown with summary
+
+## [0.2.0] - 2026-03-06
+
 ### Added
 - **Health Monitoring System**: Thread-safe monitor with 5 states, error tracking, and CLI visualization (`--show-health`, `--health-every`)
 - **Core Types**: `LogLine` and `SourceConfig` structs with parser/source constants
@@ -25,4 +35,3 @@
 
 ### Added
 - Initial project structure with Cobra CLI and Viper config
-

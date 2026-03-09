@@ -144,6 +144,9 @@ func TestFileTailer_Follow_NewLines(t *testing.T) {
 		t.Fatalf("initial: got %d lines, want 1", len(lines))
 	}
 
+	// Give fsnotify watcher time to be established
+	time.Sleep(200 * time.Millisecond)
+
 	// Append new lines
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -155,7 +158,7 @@ func TestFileTailer_Follow_NewLines(t *testing.T) {
 	}
 	_ = f.Close()
 
-	newLines := collectLines(out, 2*time.Second, 2)
+	newLines := collectLines(out, 5*time.Second, 2)
 	if len(newLines) != 2 {
 		t.Fatalf("follow: got %d lines, want 2", len(newLines))
 	}

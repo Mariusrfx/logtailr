@@ -16,11 +16,12 @@ type LogLine struct {
 // SourceConfig defines the configuration for a log source
 type SourceConfig struct {
 	Name      string `mapstructure:"name"`
-	Type      string `mapstructure:"type"`
-	Path      string `mapstructure:"path"`
-	Container string `mapstructure:"container"`
+	Type      string `mapstructure:"type"`      // "file", "docker", "journalctl", "stdin"
+	Path      string `mapstructure:"path"`      // file path (type=file)
+	Container string `mapstructure:"container"` // container name/id (type=docker)
+	Unit      string `mapstructure:"unit"`      // systemd unit (type=journalctl)
 	Follow    bool   `mapstructure:"follow"`
-	Parser    string `mapstructure:"parser"`
+	Parser    string `mapstructure:"parser"` // "json", "logfmt", "text", "" (auto)
 }
 
 // Parser type constants
@@ -35,6 +36,7 @@ const (
 	SourceTypeFile       = "file"
 	SourceTypeDocker     = "docker"
 	SourceTypeJournalctl = "journalctl"
+	SourceTypeStdin      = "stdin"
 )
 
 // LogLevels maps log levels to their numeric severity

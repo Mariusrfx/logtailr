@@ -29,6 +29,7 @@ var validSourceTypes = map[string]bool{
 	logline.SourceTypeFile:       true,
 	logline.SourceTypeDocker:     true,
 	logline.SourceTypeJournalctl: true,
+	logline.SourceTypeStdin:      true,
 }
 
 var validParsers = map[string]bool{
@@ -119,6 +120,9 @@ func ValidateConfig(cfg *Config) error {
 		}
 		if src.Type == logline.SourceTypeDocker && src.Container == "" {
 			return fmt.Errorf("config: source %q of type docker requires a container", src.Name)
+		}
+		if src.Type == logline.SourceTypeJournalctl && src.Unit == "" {
+			return fmt.Errorf("config: source %q of type journalctl requires a unit", src.Name)
 		}
 
 		if !validParsers[src.Parser] {
