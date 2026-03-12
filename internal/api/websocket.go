@@ -11,22 +11,19 @@ import (
 )
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// Limit concurrent WebSocket connections
 	if s.hub.ClientCount() >= maxWsClients {
 		http.Error(w, "too many WebSocket connections", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Validate origin: allow same-host connections only
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(req *http.Request) bool {
 			origin := req.Header.Get("Origin")
 			if origin == "" {
-				return true // Non-browser clients (curl, wscat)
+				return true
 			}
-			// Allow if origin host matches the server's listen address
 			host := req.Host
 			return strings.Contains(origin, host)
 		},
@@ -37,11 +34,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse optional query filters
 	levelFilter := strings.ToLower(r.URL.Query().Get("level"))
 	sourceFilter := r.URL.Query().Get("source")
 
-	// Validate filter values
 	if levelFilter != "" {
 		if _, ok := logline.LogLevels[levelFilter]; !ok {
 			levelFilter = ""

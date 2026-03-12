@@ -16,7 +16,6 @@ var (
 	patternLevelOnly = regexp.MustCompile(`^(\w+):?\s+(.*)$`)
 )
 
-// ParseText parses a plain text log line using common patterns
 func (p *Parser) ParseText(line string) (*logline.LogLine, error) {
 	if err := validateLine(line); err != nil {
 		return nil, err

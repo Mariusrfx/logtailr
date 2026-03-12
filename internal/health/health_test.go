@@ -271,8 +271,6 @@ func TestSourceHealthTimestamps(t *testing.T) {
 	}
 }
 
-// Test helpers
-
 func assertEqual[T comparable](t *testing.T, got, want T) {
 	t.Helper()
 	if got != want {

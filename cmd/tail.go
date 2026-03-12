@@ -70,13 +70,11 @@ func init() {
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
-	// Build source list: either from --config or from --file
 	sources, fullCfg, outputsCfg, err := buildSources(cmd)
 	if err != nil {
 		return err
 	}
 
-	// Validate global flags
 	if _, ok := logline.LogLevels[strings.ToLower(level)]; !ok {
 		return fmt.Errorf("invalid log level %q: must be one of debug, info, warn, error, fatal", level)
 	}
@@ -90,7 +88,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--output-path is required when --output=file")
 	}
 
-	// Context with signal handling
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
@@ -102,7 +99,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		cancel()
 	}()
 
-	// Initialize shared components
 	healthMonitor := health.NewMonitor()
 	writer, err := createWriter(outputsCfg)
 	if err != nil {
@@ -110,7 +106,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = writer.Close() }()
 
-	// Start alert engine if configured
 	var alertEngine *alert.Engine
 	if fullCfg != nil && fullCfg.Alerts != nil && fullCfg.Alerts.Enabled {
 		alertEngine, err = buildAlertEngine(fullCfg.Alerts, healthMonitor)
@@ -120,7 +115,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		defer func() { _ = alertEngine.Close() }()
 	}
 
-	// Start API server if enabled
 	var apiServer *api.Server
 	if apiEnabled {
 		if apiPort < 1024 || apiPort > 65535 {
@@ -137,13 +131,11 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		defer func() { _ = apiServer.Stop() }()
 	}
 
-	// Shared channels — all tailers write to the same pipeline
 	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
 	errBufSize := min(errChannelBuffer*len(sources), maxChannelSize)
 	logChan := make(chan *logline.LogLine, logBufSize)
 	errChan := make(chan error, errBufSize)
 
-	// Start a tailer for each source
 	var tailers []tailer.Tailer
 	for _, src := range sources {
 		t, err := createTailer(src, healthMonitor)
@@ -154,7 +146,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		t.Start(ctx, logChan, errChan)
 	}
 
-	// Print startup info
 	printStartupBanner(sources)
 
 	if showHealth {
@@ -162,10 +153,8 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		startHealthUpdater(ctx, healthMonitor)
 	}
 
-	// Run the pipeline (blocks until ctx is cancelled)
 	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer, alertEngine)
 
-	// Stop all tailers
 	for _, t := range tailers {
 		_ = t.Stop()
 	}
@@ -174,13 +163,11 @@ func runTail(cmd *cobra.Command, _ []string) error {
 }
 
 func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *config.OutputsConfig, error) {
-	// If --config is set, load from YAML
 	if cfgFile != "" {
 		cfg, err := config.LoadConfig(cfgFile, allowLocal)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		// Apply global config overrides from flags if set
 		if cfg.Global.Level != "" && !cmd.Flags().Changed("level") {
 			level = cfg.Global.Level
 		}
@@ -199,7 +186,6 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *
 		return cfg.Sources, cfg, &cfg.Outputs, nil
 	}
 
-	// Otherwise, require --file for single-source mode
 	if filePath == "" {
 		return nil, nil, nil, fmt.Errorf("either --file or --config is required")
 	}
@@ -255,6 +241,8 @@ func createTailer(src logline.SourceConfig, monitor *health.Monitor) (tailer.Tai
 			jt.WithOutputFormat(src.OutputFormat)
 		}
 		return jt, nil
+	case logline.SourceTypeKubernetes:
+		return tailer.NewKubernetesTailer(src.Namespace, src.Pod, src.Container, src.LabelSelector, src.Kubeconfig, src.Follow, monitor)
 	case logline.SourceTypeStdin:
 		return tailer.NewStdinTailer(monitor), nil
 	default:

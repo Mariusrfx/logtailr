@@ -9,13 +9,11 @@ import (
 	"time"
 )
 
-// StdinTailer reads log lines from standard input.
 type StdinTailer struct {
 	BaseTailer
 	cancel context.CancelFunc
 }
 
-// NewStdinTailer creates a new StdinTailer.
 func NewStdinTailer(healthMonitor *health.Monitor) *StdinTailer {
 	name := "stdin"
 	st := &StdinTailer{
@@ -32,14 +30,12 @@ func NewStdinTailer(healthMonitor *health.Monitor) *StdinTailer {
 	return st
 }
 
-// Start begins reading from stdin.
 func (st *StdinTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, st.cancel = context.WithCancel(ctx)
 
 	go st.run(ctx, out, errChan)
 }
 
-// Stop signals the tailer to stop.
 func (st *StdinTailer) Stop() error {
 	if st.cancel != nil {
 		st.cancel()

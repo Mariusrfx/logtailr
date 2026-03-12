@@ -27,7 +27,6 @@ const (
 	maxWsClients     = 100
 )
 
-// Server is the HTTP API server exposing health, metrics, and WebSocket endpoints.
 type Server struct {
 	httpServer  *http.Server
 	monitor     *health.Monitor
@@ -40,15 +39,13 @@ type Server struct {
 	cancelCtx   context.CancelFunc
 }
 
-// ServerConfig holds configuration for the API server.
 type ServerConfig struct {
-	Addr        string // bind address, e.g. "127.0.0.1:8080"
+	Addr        string
 	Monitor     *health.Monitor
 	Config      *config.Config
 	AlertEngine *alert.Engine
 }
 
-// NewServer creates a new API server.
 func NewServer(sc ServerConfig) *Server {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(collectors.NewGoCollector())
@@ -86,7 +83,6 @@ func NewServer(sc ServerConfig) *Server {
 	return s
 }
 
-// Start starts the API server and hub in background goroutines.
 func (s *Server) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelCtx = cancel
@@ -100,7 +96,6 @@ func (s *Server) Start() {
 	}()
 }
 
-// Stop gracefully shuts down the server.
 func (s *Server) Stop() error {
 	if s.cancelCtx != nil {
 		s.cancelCtx()
@@ -111,12 +106,10 @@ func (s *Server) Stop() error {
 	return s.httpServer.Shutdown(ctx)
 }
 
-// Hub returns the broadcast hub for sending logs to WebSocket clients.
 func (s *Server) Hub() *Hub {
 	return s.hub
 }
 
-// Metrics returns the Prometheus metrics for recording from the pipeline.
 func (s *Server) Metrics() *Metrics {
 	return s.metrics
 }

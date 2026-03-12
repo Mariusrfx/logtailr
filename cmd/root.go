@@ -25,19 +25,16 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 
-	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 }
 
 func initConfig() {
 	if cfgFile != "" {
-		// Validate config file path
 		absPath, err := filepath.Abs(cfgFile)
 		if err != nil {
 			fmt.Printf("Error: invalid config file path: %v\n", err)
 			os.Exit(1)
 		}
-		// Resolve symlinks to prevent traversal
 		absPath, err = filepath.EvalSymlinks(absPath)
 		if err != nil {
 			fmt.Printf("Error: cannot resolve config file path: %v\n", err)

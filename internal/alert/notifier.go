@@ -13,13 +13,11 @@ import (
 
 const webhookHTTPTimeout = 10 * time.Second
 
-// Notifier sends alert events to a destination.
 type Notifier interface {
 	Notify(event *Event) error
 	Close() error
 }
 
-// ConsoleNotifier prints alerts to stderr.
 type ConsoleNotifier struct{}
 
 func NewConsoleNotifier() *ConsoleNotifier {
@@ -45,7 +43,6 @@ func (n *ConsoleNotifier) Notify(event *Event) error {
 
 func (n *ConsoleNotifier) Close() error { return nil }
 
-// WebhookNotifier sends alerts to an HTTP webhook endpoint.
 type WebhookNotifier struct {
 	client *http.Client
 	url    string

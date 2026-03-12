@@ -28,7 +28,6 @@ const (
 	maxResponseBodyRead  = 1 << 20 // 1MB
 )
 
-// OpenSearchConfig holds the configuration for the OpenSearch writer.
 type OpenSearchConfig struct {
 	Hosts         []string `mapstructure:"hosts"`
 	Index         string   `mapstructure:"index"`
@@ -42,7 +41,6 @@ type OpenSearchConfig struct {
 	DashboardsURL string   `mapstructure:"dashboards_url"`
 }
 
-// OpenSearchWriter sends log lines to OpenSearch/Elasticsearch via bulk API.
 type OpenSearchWriter struct {
 	client        *http.Client
 	hosts         []string
@@ -62,7 +60,6 @@ type OpenSearchWriter struct {
 	done   chan struct{}
 }
 
-// NewOpenSearchWriter creates a new OpenSearch writer from config.
 func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 	if len(cfg.Hosts) == 0 {
 		return nil, fmt.Errorf("opensearch: at least one host is required")
@@ -138,12 +135,10 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 		done:          make(chan struct{}),
 	}
 
-	// Create index template on startup (best-effort)
 	if err := ow.ensureIndexTemplate(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create index template: %v\n", err)
 	}
 
-	// Create Dashboards index pattern if URL is configured (best-effort)
 	if ow.dashboardsURL != "" {
 		if err := ow.ensureIndexPattern(); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create dashboards index pattern: %v\n", err)
@@ -155,7 +150,6 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 	return ow, nil
 }
 
-// Write buffers a log line. When the buffer reaches bulkSize, it flushes.
 func (ow *OpenSearchWriter) Write(line *logline.LogLine) error {
 	doc, err := json.Marshal(line)
 	if err != nil {
@@ -173,7 +167,6 @@ func (ow *OpenSearchWriter) Write(line *logline.LogLine) error {
 	return nil
 }
 
-// Close flushes remaining logs and shuts down the writer.
 func (ow *OpenSearchWriter) Close() error {
 	ow.cancel()
 	<-ow.done
@@ -272,7 +265,6 @@ func (ow *OpenSearchWriter) resolveIndex() string {
 }
 
 func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
-	// Round-robin across hosts
 	host := ow.hosts[time.Now().UnixNano()%int64(len(ow.hosts))]
 	url := strings.TrimRight(host, "/") + "/_bulk"
 
@@ -293,16 +285,13 @@ func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Limit how much of the response body we read
 	limitedBody := io.LimitReader(resp.Body, maxResponseBodyRead)
 
 	if resp.StatusCode >= 400 {
-		// Do not include response body in error — may contain sensitive data
 		_, _ = io.Copy(io.Discard, limitedBody)
 		return fmt.Errorf("opensearch bulk insert failed: HTTP %d", resp.StatusCode)
 	}
 
-	// Check for partial failures in bulk response
 	var bulkResp struct {
 		Errors bool `json:"errors"`
 	}
@@ -313,9 +302,7 @@ func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
 	return nil
 }
 
-// ensureIndexTemplate creates an index template in OpenSearch with proper mappings.
 func (ow *OpenSearchWriter) ensureIndexTemplate() error {
-	// Build index pattern from the configured index (replace date tokens with *)
 	indexPattern := ow.index
 	for _, token := range []string{"%{+YYYY.MM.dd}", "%{+YYYY.MM}", "%{+YYYY}"} {
 		indexPattern = strings.ReplaceAll(indexPattern, token, "*")
@@ -375,9 +362,7 @@ func (ow *OpenSearchWriter) ensureIndexTemplate() error {
 	return nil
 }
 
-// ensureIndexPattern creates an index pattern in OpenSearch Dashboards.
 func (ow *OpenSearchWriter) ensureIndexPattern() error {
-	// Build the pattern from the configured index
 	indexPattern := ow.index
 	for _, token := range []string{"%{+YYYY.MM.dd}", "%{+YYYY.MM}", "%{+YYYY}"} {
 		indexPattern = strings.ReplaceAll(indexPattern, token, "*")
@@ -414,7 +399,6 @@ func (ow *OpenSearchWriter) ensureIndexPattern() error {
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyRead))
 
-	// 409 = already exists, which is fine
 	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusConflict {
 		return fmt.Errorf("HTTP %d creating index pattern", resp.StatusCode)
 	}

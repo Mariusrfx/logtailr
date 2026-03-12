@@ -4,7 +4,6 @@ import (
 	"time"
 )
 
-// LogLine represents a parsed log line
 type LogLine struct {
 	Timestamp time.Time              `json:"timestamp"`
 	Level     string                 `json:"level"`
@@ -15,15 +14,19 @@ type LogLine struct {
 
 // SourceConfig defines the configuration for a log source
 type SourceConfig struct {
-	Name         string `mapstructure:"name"`
-	Type         string `mapstructure:"type"`          // "file", "docker", "journalctl", "stdin"
-	Path         string `mapstructure:"path"`          // file path (type=file)
-	Container    string `mapstructure:"container"`     // container name/id (type=docker)
-	Unit         string `mapstructure:"unit"`          // systemd unit (type=journalctl)
-	Priority     string `mapstructure:"priority"`      // journalctl priority filter (emerg..debug)
-	OutputFormat string `mapstructure:"output_format"` // journalctl output format: "json" or "" (short-iso)
-	Follow       bool   `mapstructure:"follow"`
-	Parser       string `mapstructure:"parser"` // "json", "logfmt", "text", "" (auto)
+	Name          string `mapstructure:"name"`
+	Type          string `mapstructure:"type"`           // "file", "docker", "journalctl", "stdin", "kubernetes"
+	Path          string `mapstructure:"path"`           // file path (type=file)
+	Container     string `mapstructure:"container"`      // container name/id (type=docker) or container name (type=kubernetes)
+	Unit          string `mapstructure:"unit"`           // systemd unit (type=journalctl)
+	Priority      string `mapstructure:"priority"`       // journalctl priority filter (emerg..debug)
+	OutputFormat  string `mapstructure:"output_format"`  // journalctl output format: "json" or "" (short-iso)
+	Namespace     string `mapstructure:"namespace"`      // kubernetes namespace (type=kubernetes)
+	Pod           string `mapstructure:"pod"`            // kubernetes pod name (type=kubernetes)
+	LabelSelector string `mapstructure:"label_selector"` // kubernetes label selector (type=kubernetes), e.g. "app=myapp"
+	Kubeconfig    string `mapstructure:"kubeconfig"`     // path to kubeconfig file (type=kubernetes)
+	Follow        bool   `mapstructure:"follow"`
+	Parser        string `mapstructure:"parser"` // "json", "logfmt", "text", "" (auto)
 }
 
 // JournalctlPriorities maps journalctl priority names to syslog numeric values.
@@ -38,19 +41,18 @@ var JournalctlPriorities = map[string]int{
 	"debug":   7,
 }
 
-// Parser type constants
 const (
 	ParserJSON   = "json"
 	ParserLogfmt = "logfmt"
 	ParserText   = "text"
 )
 
-// Source type constants
 const (
 	SourceTypeFile       = "file"
 	SourceTypeDocker     = "docker"
 	SourceTypeJournalctl = "journalctl"
 	SourceTypeStdin      = "stdin"
+	SourceTypeKubernetes = "kubernetes"
 )
 
 // LogLevels maps log levels to their numeric severity

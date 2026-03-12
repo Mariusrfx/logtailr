@@ -6,7 +6,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Metrics holds all Prometheus metrics for logtailr.
 type Metrics struct {
 	LogsTotal          *prometheus.CounterVec
 	AlertsTotal        *prometheus.CounterVec
@@ -17,7 +16,6 @@ type Metrics struct {
 	WebSocketClients   prometheus.Gauge
 }
 
-// NewMetrics creates and registers all Prometheus metrics.
 func NewMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		LogsTotal: prometheus.NewCounterVec(
@@ -83,14 +81,12 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	return m
 }
 
-// UpdateSourceHealth syncs Prometheus gauges with current health state.
 func (m *Metrics) UpdateSourceHealth(monitor *health.Monitor) {
 	statuses := monitor.GetAllStatuses()
 	healthy, degraded, failed, _ := monitor.GetHealthCount()
 	m.ActiveSources.Set(float64(healthy + degraded + failed))
 
 	for _, s := range statuses {
-		// Reset all status labels for this source, then set the active one
 		for _, st := range []string{"healthy", "degraded", "failed", "stopped"} {
 			m.SourceHealthy.WithLabelValues(s.Name, st).Set(0)
 		}

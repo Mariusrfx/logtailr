@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-12
+
+### Added
+- **F2.3 KubernetesTailer**: Read logs from Kubernetes pods via `kubectl logs` with follow mode, namespace selection, and health monitoring
+- **Kubernetes pod selection**: Support for logs by pod name (`pod: "api-server"`) or by label selector (`label_selector: "app=worker,version=v2"`)
+- **Kubernetes container selection**: Optional `container` field for multi-container pods (`-c` flag)
+- **Kubernetes kubeconfig support**: Optional `kubeconfig` field to specify a custom kubeconfig path
+- **Kubernetes auto-reconnect**: Exponential backoff reconnection (1s–30s) when pod log stream ends or pod restarts
+- **Config validation**: Kubernetes sources require either `pod` or `label_selector` (not both), label selectors validated against injection, `namespace`/`label_selector`/`kubeconfig` fields restricted to kubernetes source type
+
 ## [0.8.0] - 2026-03-09
 
 ### Added

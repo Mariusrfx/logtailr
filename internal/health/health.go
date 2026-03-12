@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// Status represents the health status of a source
 type Status string
 
 const (
@@ -25,7 +24,6 @@ var statusSymbols = map[Status]string{
 	StatusStarting: "⏳",
 }
 
-// SourceHealth contains the health state of a specific source
 type SourceHealth struct {
 	Name       string
 	Status     Status
@@ -40,24 +38,20 @@ func (s *SourceHealth) copy() *SourceHealth {
 	return &copied
 }
 
-// StatusChangeFunc is called when a source's health status changes.
 type StatusChangeFunc func(source string, oldStatus, newStatus Status)
 
-// Monitor manages the health status of all sources
 type Monitor struct {
 	mu       sync.RWMutex
 	sources  map[string]*SourceHealth
 	onChange StatusChangeFunc
 }
 
-// NewMonitor creates a new health monitor
 func NewMonitor() *Monitor {
 	return &Monitor{
 		sources: make(map[string]*SourceHealth),
 	}
 }
 
-// RegisterSource registers a new source for monitoring
 func (m *Monitor) RegisterSource(name string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -71,14 +65,12 @@ func (m *Monitor) RegisterSource(name string) {
 	}
 }
 
-// SetOnChange registers a callback for health status transitions.
 func (m *Monitor) SetOnChange(fn StatusChangeFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onChange = fn
 }
 
-// UpdateStatus updates the status of a source
 func (m *Monitor) UpdateStatus(name string, status Status, err error) {
 	m.mu.Lock()
 
@@ -95,7 +87,6 @@ func (m *Monitor) UpdateStatus(name string, status Status, err error) {
 	onChange := m.onChange
 	m.mu.Unlock()
 
-	// Fire callback outside the lock to prevent deadlocks
 	if onChange != nil && oldStatus != status {
 		onChange(name, oldStatus, status)
 	}
@@ -113,27 +104,22 @@ func (m *Monitor) getOrCreateSource(name string) *SourceHealth {
 	return source
 }
 
-// MarkHealthy marks a source as healthy
 func (m *Monitor) MarkHealthy(name string) {
 	m.UpdateStatus(name, StatusHealthy, nil)
 }
 
-// MarkFailed marks a source as failed
 func (m *Monitor) MarkFailed(name string, err error) {
 	m.UpdateStatus(name, StatusFailed, err)
 }
 
-// MarkDegraded marks a source as degraded
 func (m *Monitor) MarkDegraded(name string, err error) {
 	m.UpdateStatus(name, StatusDegraded, err)
 }
 
-// MarkStopped marks a source as stopped
 func (m *Monitor) MarkStopped(name string) {
 	m.UpdateStatus(name, StatusStopped, nil)
 }
 
-// GetStatus returns the status of a specific source
 func (m *Monitor) GetStatus(name string) (*SourceHealth, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -146,7 +132,6 @@ func (m *Monitor) GetStatus(name string) (*SourceHealth, bool) {
 	return source.copy(), true
 }
 
-// GetAllStatuses returns the status of all sources
 func (m *Monitor) GetAllStatuses() map[string]*SourceHealth {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -159,12 +144,10 @@ func (m *Monitor) GetAllStatuses() map[string]*SourceHealth {
 	return statuses
 }
 
-// GetHealthySources returns only the healthy sources
 func (m *Monitor) GetHealthySources() []*SourceHealth {
 	return m.getSourcesByStatus(StatusHealthy)
 }
 
-// GetFailedSources returns only the failed sources
 func (m *Monitor) GetFailedSources() []*SourceHealth {
 	return m.getSourcesByStatus(StatusFailed)
 }
@@ -183,7 +166,6 @@ func (m *Monitor) getSourcesByStatus(status Status) []*SourceHealth {
 	return result
 }
 
-// GetHealthCount returns the count of sources by status
 func (m *Monitor) GetHealthCount() (healthy, degraded, failed, stopped int) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -204,7 +186,6 @@ func (m *Monitor) GetHealthCount() (healthy, degraded, failed, stopped int) {
 	return
 }
 
-// IsAllHealthy returns true if all sources are healthy
 func (m *Monitor) IsAllHealthy() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -218,7 +199,6 @@ func (m *Monitor) IsAllHealthy() bool {
 	return true
 }
 
-// Summary generates a summary of the health status
 func (m *Monitor) Summary() string {
 	healthy, degraded, failed, stopped := m.GetHealthCount()
 	total := len(m.sources)
@@ -227,12 +207,10 @@ func (m *Monitor) Summary() string {
 		total, healthy, degraded, failed, stopped)
 }
 
-// String returns a string representation of the status
 func (s Status) String() string {
 	return string(s)
 }
 
-// Symbol returns the visual symbol for the status
 func (s Status) Symbol() string {
 	if symbol, ok := statusSymbols[s]; ok {
 		return symbol

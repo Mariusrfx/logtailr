@@ -29,10 +29,8 @@ func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
 		return primary, nil
 	}
 
-	// Collect additional writers from outputs config
 	writers := []output.Writer{primary}
 
-	// File output from config (separate from --output=file flag)
 	if outputsCfg.File != nil && outputsCfg.File.Path != "" && outputFlag != "file" {
 		opts := fileOptsFromOutputConfig(outputsCfg.File)
 		fw, err := output.NewFileWriter(outputsCfg.File.Path, opts...)
@@ -82,8 +80,6 @@ func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
 	return output.NewMultiWriter(writers...), nil
 }
 
-// fileOptsFromConfig extracts file rotation options from the outputs config
-// when using --output=file flag mode.
 func fileOptsFromConfig(outputsCfg *config.OutputsConfig) []output.FileOption {
 	if outputsCfg == nil || outputsCfg.File == nil {
 		return nil
@@ -91,7 +87,6 @@ func fileOptsFromConfig(outputsCfg *config.OutputsConfig) []output.FileOption {
 	return fileOptsFromOutputConfig(outputsCfg.File)
 }
 
-// fileOptsFromOutputConfig converts FileOutputConfig to FileOption slice.
 func fileOptsFromOutputConfig(fc *config.FileOutputConfig) []output.FileOption {
 	var opts []output.FileOption
 

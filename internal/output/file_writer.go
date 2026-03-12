@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-// FileWriter writes log lines to a file with optional rotation.
 type FileWriter struct {
 	path     string
 	file     *os.File
@@ -24,32 +23,25 @@ type FileWriter struct {
 	compress bool
 }
 
-// FileOption configures the FileWriter.
 type FileOption func(*FileWriter)
 
-// WithMaxSize sets the maximum file size in bytes before rotation.
 func WithMaxSize(bytes int64) FileOption {
 	return func(fw *FileWriter) { fw.maxSize = bytes }
 }
 
-// WithMaxAge sets the maximum age of rotated files before cleanup.
 func WithMaxAge(d time.Duration) FileOption {
 	return func(fw *FileWriter) { fw.maxAge = d }
 }
 
-// WithCompress enables gzip compression of rotated files.
 func WithCompress() FileOption {
 	return func(fw *FileWriter) { fw.compress = true }
 }
 
-// NewFileWriter creates a FileWriter that appends to the given file path.
-// The path is resolved to an absolute path and validated to prevent path traversal.
 func NewFileWriter(path string, opts ...FileOption) (*FileWriter, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve output path: %w", err)
 	}
-	// Ensure parent directory exists and is not a symlink escape
 	dir := filepath.Dir(absPath)
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("output directory does not exist: %w", err)
@@ -60,7 +52,6 @@ func NewFileWriter(path string, opts ...FileOption) (*FileWriter, error) {
 		return nil, fmt.Errorf("failed to open output file: %w", err)
 	}
 
-	// Get current file size for rotation tracking
 	fi, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
@@ -87,7 +78,6 @@ func (fw *FileWriter) Write(line *logline.LogLine) error {
 	level := strings.ToUpper(line.Level)
 	formatted := fmt.Sprintf("[%s] [%s] %s: %s\n", ts, line.Source, level, line.Message)
 
-	// Check if rotation is needed before writing
 	if fw.maxSize > 0 && fw.size+int64(len(formatted)) > fw.maxSize {
 		if err := fw.rotate(); err != nil {
 			return fmt.Errorf("file rotation failed: %w", err)
@@ -109,9 +99,6 @@ func (fw *FileWriter) Close() error {
 	return nil
 }
 
-// rotate closes the current file, renames it with a timestamp suffix,
-// optionally compresses it, cleans up old files, and opens a new file.
-// Must be called with fw.mu held.
 func (fw *FileWriter) rotate() error {
 	if err := fw.file.Close(); err != nil {
 		return fmt.Errorf("close current file: %w", err)
@@ -128,7 +115,6 @@ func (fw *FileWriter) rotate() error {
 		go compressFile(rotatedPath)
 	}
 
-	// Open a new file
 	f, err := os.OpenFile(fw.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return fmt.Errorf("open new file after rotation: %w", err)
@@ -136,7 +122,6 @@ func (fw *FileWriter) rotate() error {
 	fw.file = f
 	fw.size = 0
 
-	// Cleanup old rotated files
 	if fw.maxAge > 0 {
 		go fw.cleanupOldFiles()
 	}
@@ -144,7 +129,6 @@ func (fw *FileWriter) rotate() error {
 	return nil
 }
 
-// compressFile gzip-compresses a file and removes the original.
 func compressFile(path string) {
 	src, err := os.Open(path)
 	if err != nil {
@@ -178,11 +162,9 @@ func compressFile(path string) {
 	_ = dst.Close()
 	_ = src.Close()
 
-	// Remove uncompressed original
 	_ = os.Remove(path)
 }
 
-// cleanupOldFiles removes rotated files older than maxAge.
 func (fw *FileWriter) cleanupOldFiles() {
 	dir := filepath.Dir(fw.path)
 	base := filepath.Base(fw.path)
@@ -194,7 +176,6 @@ func (fw *FileWriter) cleanupOldFiles() {
 
 	cutoff := time.Now().Add(-fw.maxAge)
 
-	// Collect rotated files
 	type rotatedFile struct {
 		path    string
 		modTime time.Time
@@ -206,7 +187,6 @@ func (fw *FileWriter) cleanupOldFiles() {
 		if !strings.HasPrefix(name, base+".") {
 			continue
 		}
-		// Skip the current log file
 		if name == base {
 			continue
 		}
@@ -224,7 +204,6 @@ func (fw *FileWriter) cleanupOldFiles() {
 		}
 	}
 
-	// Sort oldest first and remove
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].modTime.Before(candidates[j].modTime)
 	})

@@ -18,8 +18,6 @@ func validateLine(line string) error {
 	return nil
 }
 
-// Extraction helpers for JSON
-
 func extractTimestamp(raw map[string]interface{}, keys []string) time.Time {
 	for _, key := range keys {
 		if val, ok := raw[key]; ok {
@@ -51,8 +49,6 @@ func extractMessage(raw map[string]interface{}, keys []string) string {
 	}
 	return ""
 }
-
-// Parsing helpers
 
 func parseTimestamp(val interface{}) (time.Time, error) {
 	switch v := val.(type) {

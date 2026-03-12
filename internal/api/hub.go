@@ -10,7 +10,6 @@ const (
 	clientSendBuffer   = 64
 )
 
-// Hub manages WebSocket client subscriptions and broadcasts log lines.
 type Hub struct {
 	mu         sync.RWMutex
 	clients    map[*Client]bool
@@ -20,15 +19,13 @@ type Hub struct {
 	done       chan struct{}
 }
 
-// Client represents a connected WebSocket subscriber.
 type Client struct {
 	Send       chan *logline.LogLine
-	MinLevel   string // optional filter: only send logs >= this level
-	SourceName string // optional filter: only send logs from this source
-	closed     bool   // guard against double-close
+	MinLevel   string
+	SourceName string
+	closed     bool
 }
 
-// NewHub creates a new Hub.
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
@@ -39,7 +36,6 @@ func NewHub() *Hub {
 	}
 }
 
-// Run starts the hub's main loop. Call in a goroutine.
 func (h *Hub) Run() {
 	for {
 		select {
@@ -68,7 +64,6 @@ func (h *Hub) Run() {
 				select {
 				case client.Send <- line:
 				default:
-					// Client too slow, drop message
 				}
 			}
 			h.mu.RUnlock()
@@ -88,31 +83,25 @@ func (h *Hub) Run() {
 	}
 }
 
-// Broadcast sends a log line to all connected clients.
 func (h *Hub) Broadcast(line *logline.LogLine) {
 	select {
 	case h.broadcast <- line:
 	default:
-		// Hub buffer full, drop
 	}
 }
 
-// Register adds a client to the hub.
 func (h *Hub) Register(client *Client) {
 	h.register <- client
 }
 
-// Unregister removes a client from the hub.
 func (h *Hub) Unregister(client *Client) {
 	h.unregister <- client
 }
 
-// Stop shuts down the hub.
 func (h *Hub) Stop() {
 	close(h.done)
 }
 
-// ClientCount returns the number of connected clients.
 func (h *Hub) ClientCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

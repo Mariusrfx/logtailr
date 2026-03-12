@@ -19,14 +19,12 @@ const (
 	maxFieldsCount = 100        // max JSON/logfmt fields per entry
 )
 
-// Key aliases for common log fields
 var (
 	timestampKeys = []string{"timestamp", "time", "ts", "@timestamp", "datetime"}
 	levelKeys     = []string{"level", "lvl", "severity", "loglevel"}
 	messageKeys   = []string{"message", "msg", "text", "log"}
 )
 
-// Level aliases mapping to standard levels
 var levelAliases = map[string]string{
 	"warning":     "warn",
 	"err":         "error",
@@ -36,7 +34,6 @@ var levelAliases = map[string]string{
 	"information": "info",
 }
 
-// Common timestamp formats to try when parsing
 var timestampFormats = []string{
 	time.RFC3339,
 	time.RFC3339Nano,
@@ -47,17 +44,14 @@ var timestampFormats = []string{
 	"Jan 02 15:04:05",
 }
 
-// Parser handles parsing of different log formats
 type Parser struct {
 	source string
 }
 
-// New creates a new Parser with the given source name
 func New(source string) *Parser {
 	return &Parser{source: source}
 }
 
-// Parse parses a line using the specified format
 func (p *Parser) Parse(line, format string) (*logline.LogLine, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -76,7 +70,6 @@ func (p *Parser) Parse(line, format string) (*logline.LogLine, error) {
 	}
 }
 
-// AutoDetect tries to automatically detect the format and parse
 func (p *Parser) AutoDetect(line string) (*logline.LogLine, error) {
 	if err := validateLine(line); err != nil {
 		return nil, err

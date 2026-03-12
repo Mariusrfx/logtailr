@@ -9,7 +9,6 @@ import (
 	"sync"
 )
 
-// ANSI color codes for log levels
 const (
 	colorReset  = "\033[0m"
 	colorDim    = "\033[2m"
@@ -28,7 +27,6 @@ var levelColors = map[string]string{
 
 const defaultTimestampFormat = "2006-01-02 15:04:05"
 
-// ConsoleWriter writes log lines to stdout with colors.
 type ConsoleWriter struct {
 	out      io.Writer
 	noColor  bool
@@ -36,25 +34,20 @@ type ConsoleWriter struct {
 	tsFormat string
 }
 
-// ConsoleOption configures the ConsoleWriter.
 type ConsoleOption func(*ConsoleWriter)
 
-// WithNoColor disables ANSI color output.
 func WithNoColor() ConsoleOption {
 	return func(cw *ConsoleWriter) { cw.noColor = true }
 }
 
-// WithOutput sets a custom writer (useful for testing).
 func WithOutput(w io.Writer) ConsoleOption {
 	return func(cw *ConsoleWriter) { cw.out = w }
 }
 
-// WithTimestampFormat sets a custom timestamp format.
 func WithTimestampFormat(format string) ConsoleOption {
 	return func(cw *ConsoleWriter) { cw.tsFormat = format }
 }
 
-// NewConsoleWriter creates a ConsoleWriter that writes colored output to stdout.
 func NewConsoleWriter(opts ...ConsoleOption) *ConsoleWriter {
 	cw := &ConsoleWriter{
 		out:      os.Stdout,

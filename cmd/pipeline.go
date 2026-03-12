@@ -39,7 +39,6 @@ func runPipeline(
 				return nil
 			}
 
-			// Parse: use a per-source parser to detect format
 			logParser := parser.New(raw.Source)
 			parsed, err := logParser.Parse(raw.Message, parserFlag)
 			if err != nil {
@@ -48,34 +47,28 @@ func runPipeline(
 				parsed.Source = raw.Source
 			}
 
-			// Record metrics before filtering (total processed)
 			if apiServer != nil {
 				safeSource := api.SanitizeLabel(parsed.Source, 128)
 				safeLevel := api.SanitizeLabel(parsed.Level, 16)
 				apiServer.Metrics().LogsTotal.WithLabelValues(safeSource, safeLevel).Inc()
 			}
 
-			// Evaluate alert rules before filtering (alerts see ALL logs)
 			if alertEngine != nil {
 				alertEngine.ProcessLine(parsed)
 			}
 
-			// Filter: level
 			if !filter.ByLevel(parsed, level) {
 				continue
 			}
 
-			// Filter: regex
 			if !regexFilter.Match(parsed.Message) {
 				continue
 			}
 
-			// Output
 			if err := writer.Write(parsed); err != nil {
 				_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
 			}
 
-			// Broadcast to WebSocket clients (after filtering)
 			if apiServer != nil {
 				apiServer.Hub().Broadcast(parsed)
 			}

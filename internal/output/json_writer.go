@@ -8,13 +8,11 @@ import (
 	"sync"
 )
 
-// JSONWriter writes log lines as JSON objects, one per line (NDJSON).
 type JSONWriter struct {
 	out io.Writer
 	mu  sync.Mutex
 }
 
-// NewJSONWriter creates a JSONWriter that writes to the given writer.
 func NewJSONWriter(out io.Writer) *JSONWriter {
 	return &JSONWriter{out: out}
 }

@@ -22,7 +22,6 @@ func buildAlertEngine(cfg *config.AlertsConfig, monitor *health.Monitor) (*alert
 		return nil, err
 	}
 
-	// Wire health change callback
 	monitor.SetOnChange(func(source string, oldStatus, newStatus health.Status) {
 		engine.ProcessHealthChange(source, oldStatus, newStatus)
 	})
@@ -87,7 +86,6 @@ func buildAlertNotifiers(cfg *config.AlertsConfig) []alert.Notifier {
 		notifiers = append(notifiers, alert.NewWebhookNotifier(cfg.Notify.Webhook.URL))
 	}
 
-	// Default to console if no notifier configured
 	if len(notifiers) == 0 {
 		notifiers = append(notifiers, alert.NewConsoleNotifier())
 	}

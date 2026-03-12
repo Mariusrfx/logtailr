@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// FormatLogLine returns a plain text formatted line (for reuse).
 func FormatLogLine(line *logline.LogLine) string {
 	ts := line.Timestamp.Format(defaultTimestampFormat)
 	level := strings.ToUpper(line.Level)

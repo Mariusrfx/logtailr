@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-// rateLimiter tracks the last fire time per rule to enforce cooldown periods.
 type rateLimiter struct {
 	mu       sync.Mutex
 	lastFire map[string]time.Time
@@ -17,7 +16,6 @@ func newRateLimiter() *rateLimiter {
 	}
 }
 
-// Allow returns true if the rule is allowed to fire (cooldown has elapsed).
 func (rl *rateLimiter) Allow(ruleName string, cooldown time.Duration) bool {
 	if cooldown <= 0 {
 		return true

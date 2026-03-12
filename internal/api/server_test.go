@@ -279,7 +279,6 @@ func TestWebSocket_Connect(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Give hub time to register
 	time.Sleep(50 * time.Millisecond)
 
 	if s.hub.ClientCount() != 1 {
@@ -304,7 +303,6 @@ func TestWebSocket_ReceiveLogs(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Broadcast a log
 	testLog := &logline.LogLine{
 		Timestamp: time.Now(),
 		Level:     "error",
@@ -313,7 +311,6 @@ func TestWebSocket_ReceiveLogs(t *testing.T) {
 	}
 	s.hub.Broadcast(testLog)
 
-	// Read from WebSocket
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
@@ -341,7 +338,6 @@ func TestWebSocket_LevelFilter(t *testing.T) {
 	ts := httptest.NewServer(s.httpServer.Handler)
 	defer ts.Close()
 
-	// Connect with level=error filter
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws/logs?level=error"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
@@ -351,7 +347,6 @@ func TestWebSocket_LevelFilter(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Broadcast an info log (should be filtered)
 	s.hub.Broadcast(&logline.LogLine{
 		Timestamp: time.Now(),
 		Level:     "info",
@@ -359,7 +354,6 @@ func TestWebSocket_LevelFilter(t *testing.T) {
 		Source:    "app.log",
 	})
 
-	// Broadcast an error log (should pass)
 	s.hub.Broadcast(&logline.LogLine{
 		Timestamp: time.Now(),
 		Level:     "error",
@@ -419,9 +413,7 @@ func TestHub_SourceFilter(t *testing.T) {
 	hub.Register(client)
 	time.Sleep(20 * time.Millisecond)
 
-	// Send from app.log (should be filtered)
 	hub.Broadcast(&logline.LogLine{Source: "app.log", Message: "filtered"})
-	// Send from nginx (should pass)
 	hub.Broadcast(&logline.LogLine{Source: "nginx", Message: "passed"})
 
 	select {
@@ -457,7 +449,6 @@ func TestMetrics_LogsTotal(t *testing.T) {
 func TestHealthSource_NotFound_NoReflection(t *testing.T) {
 	s, _ := newTestServer(t)
 
-	// Path value should NOT be reflected in error response
 	req := httptest.NewRequest(http.MethodGet, "/health/sources/<script>alert(1)</script>", nil)
 	rec := httptest.NewRecorder()
 	s.httpServer.Handler.ServeHTTP(rec, req)
@@ -518,7 +509,6 @@ func TestHub_DoubleUnregister(t *testing.T) {
 	hub.Register(client)
 	time.Sleep(20 * time.Millisecond)
 
-	// Double unregister should not panic
 	hub.Unregister(client)
 	time.Sleep(20 * time.Millisecond)
 	hub.Unregister(client)

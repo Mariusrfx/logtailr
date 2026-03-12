@@ -6,7 +6,7 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 
 ## Features
 
-- **Multi-source tailing** — Files, Docker containers (with auto-reconnect), journalctl units, stdin pipes
+- **Multi-source tailing** — Files, Docker containers (with auto-reconnect), journalctl units, Kubernetes pods, stdin pipes
 - **Multi-format parser** — JSON, logfmt, and plain text with auto-detection
 - **Level filtering** — Filter by severity: `debug < info < warn < error < fatal`
 - **Regex filtering** — Match log messages with regular expressions
@@ -87,7 +87,30 @@ logtailr tail --config config.yaml
 | `file` | `path` | Local log file, supports follow and log rotation |
 | `docker` | `container` | Docker container logs via `docker logs`, auto-reconnects on restart |
 | `journalctl` | `unit` | Systemd journal via `journalctl -u`, supports priority filter and JSON output |
+| `kubernetes` | `pod` or `label_selector` | Kubernetes pod logs via `kubectl logs`, auto-reconnects on pod restart |
 | `stdin` | — | Read from pipe (auto-detected or via config) |
+
+### Kubernetes options
+
+```yaml
+sources:
+  # By pod name
+  - name: "k8s-api"
+    type: "kubernetes"
+    namespace: "production"
+    pod: "api-server"
+    container: "app"             # Optional: specific container in multi-container pod
+    kubeconfig: "~/.kube/config" # Optional: path to kubeconfig (default: kubectl default)
+    follow: true
+    parser: "json"
+
+  # By label selector
+  - name: "k8s-workers"
+    type: "kubernetes"
+    namespace: "production"
+    label_selector: "app=worker,version=v2"
+    follow: true
+```
 
 ### Journalctl options
 
@@ -322,7 +345,7 @@ logtailr/
 │   ├── health/             # Source health monitoring
 │   ├── output/             # Console, JSON, file, OpenSearch, webhook writers
 │   ├── parser/             # JSON, logfmt, text parsers
-│   └── tailer/             # File, Docker, journalctl, stdin tailers
+│   └── tailer/             # File, Docker, journalctl, Kubernetes, stdin tailers
 ├── pkg/logline/            # Core types (LogLine, SourceConfig)
 ├── Makefile
 └── config.yaml             # Example config

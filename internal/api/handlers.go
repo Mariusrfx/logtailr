@@ -56,7 +56,6 @@ func (s *Server) handleHealthSources(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleHealthSource(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
-	// Sanitize: truncate and strip non-printable characters
 	name = sanitizeInput(name, maxSourceNameLen)
 
 	sh, ok := s.monitor.GetStatus(name)
@@ -89,7 +88,6 @@ func (s *Server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	// Sanitize: remove secrets from output
 	sanitized := map[string]interface{}{
 		"sources": s.cfg.Sources,
 		"global":  s.cfg.Global,

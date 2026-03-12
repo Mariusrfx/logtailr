@@ -17,13 +17,10 @@ const (
 	reconnectMaxDelay  = 30 * time.Second
 )
 
-// dockerTimestampLen is the length of a Docker --timestamps prefix: "2006-01-02T15:04:05.000000000Z "
 const dockerTimestampLen = 31
 
-// ansiPattern matches ANSI escape sequences (colors, cursor movement, etc.)
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
-// DockerTailer reads log lines from a Docker container using `docker logs`.
 type DockerTailer struct {
 	BaseTailer
 	container string
@@ -31,7 +28,6 @@ type DockerTailer struct {
 	cancel    context.CancelFunc
 }
 
-// NewDockerTailer creates a new DockerTailer.
 func NewDockerTailer(container string, follow bool, healthMonitor *health.Monitor) (*DockerTailer, error) {
 	if err := ValidateExternalName(container, "container"); err != nil {
 		return nil, err
@@ -183,13 +179,10 @@ func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, er
 	return true
 }
 
-// parseDockerLine extracts the Docker timestamp and cleans ANSI codes from the line.
-// Docker --timestamps format: "2006-01-02T15:04:05.000000000Z <message>"
 func parseDockerLine(line string) (time.Time, string) {
 	ts := time.Now()
 	msg := line
 
-	// Extract Docker timestamp prefix
 	if len(line) >= dockerTimestampLen && line[dockerTimestampLen-1] == ' ' {
 		if parsed, err := time.Parse(time.RFC3339Nano, line[:dockerTimestampLen-1]); err == nil {
 			ts = parsed
@@ -197,10 +190,8 @@ func parseDockerLine(line string) (time.Time, string) {
 		}
 	}
 
-	// Strip ANSI escape codes
 	msg = ansiPattern.ReplaceAllString(msg, "")
 
-	// Clean up empty box-drawing and whitespace artifacts
 	msg = strings.TrimSpace(msg)
 
 	return ts, msg

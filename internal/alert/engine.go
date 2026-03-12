@@ -16,13 +16,11 @@ const (
 	processQueueSize = 512
 )
 
-// evaluator is the internal interface for compiled rule evaluation.
 type evaluator interface {
 	evaluate(line *logline.LogLine) *Event
 	rule() *Rule
 }
 
-// Engine evaluates alert rules against log lines and health changes.
 type Engine struct {
 	evaluators []evaluator
 	notifiers  []Notifier
@@ -43,7 +41,6 @@ type ruleState struct {
 	LastFired time.Time `json:"last_fired,omitzero"`
 }
 
-// NewEngine creates a new alert engine with the given rules and notifiers.
 func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 	evals := make([]evaluator, 0, len(rules))
 	stats := make(map[string]*ruleState, len(rules))
@@ -72,16 +69,13 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 	return e, nil
 }
 
-// ProcessLine queues a log line for alert evaluation. Non-blocking.
 func (e *Engine) ProcessLine(line *logline.LogLine) {
 	select {
 	case e.processCh <- line:
 	default:
-		// Queue full, drop
 	}
 }
 
-// ProcessHealthChange evaluates health change rules.
 func (e *Engine) ProcessHealthChange(source string, oldStatus, newStatus health.Status) {
 	for _, ev := range e.evaluators {
 		r := ev.rule()
@@ -104,7 +98,6 @@ func (e *Engine) ProcessHealthChange(source string, oldStatus, newStatus health.
 	}
 }
 
-// RecentEvents returns the last N alert events.
 func (e *Engine) RecentEvents(limit int) []*Event {
 	e.recentMu.RLock()
 	defer e.recentMu.RUnlock()
@@ -113,7 +106,6 @@ func (e *Engine) RecentEvents(limit int) []*Event {
 		limit = len(e.recent)
 	}
 
-	// Return most recent first
 	start := len(e.recent) - limit
 	result := make([]*Event, limit)
 	for i, j := start, 0; i < len(e.recent); i, j = i+1, j+1 {
@@ -123,7 +115,6 @@ func (e *Engine) RecentEvents(limit int) []*Event {
 	return result
 }
 
-// RuleStats returns the state of each rule (fire count, last fired).
 func (e *Engine) RuleStats() map[string]*ruleState {
 	e.ruleMu.RLock()
 	defer e.ruleMu.RUnlock()
@@ -136,7 +127,6 @@ func (e *Engine) RuleStats() map[string]*ruleState {
 	return result
 }
 
-// Rules returns the configured rules.
 func (e *Engine) Rules() []Rule {
 	rules := make([]Rule, len(e.evaluators))
 	for i, ev := range e.evaluators {
@@ -145,7 +135,6 @@ func (e *Engine) Rules() []Rule {
 	return rules
 }
 
-// Close shuts down the engine and notifiers.
 func (e *Engine) Close() error {
 	close(e.processCh)
 	<-e.done
@@ -176,7 +165,6 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 		return
 	}
 
-	// Update stats
 	e.ruleMu.Lock()
 	if st, ok := e.ruleStats[r.Name]; ok {
 		st.FireCount++
@@ -184,7 +172,6 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 	}
 	e.ruleMu.Unlock()
 
-	// Store in recent events ring buffer
 	e.recentMu.Lock()
 	if len(e.recent) >= maxRecentEvents {
 		e.recent = e.recent[1:]
@@ -192,7 +179,6 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 	e.recent = append(e.recent, event)
 	e.recentMu.Unlock()
 
-	// Notify all destinations
 	for _, n := range e.notifiers {
 		if err := n.Notify(event); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "alert notify error: %v\n", err)
@@ -200,9 +186,6 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 	}
 }
 
-// Rule evaluator implementations
-
-// patternEvaluator matches a regex pattern against log messages.
 type patternEvaluator struct {
 	r       *Rule
 	pattern *regexp.Regexp
@@ -226,7 +209,6 @@ func (pe *patternEvaluator) evaluate(line *logline.LogLine) *Event {
 
 func (pe *patternEvaluator) rule() *Rule { return pe.r }
 
-// levelEvaluator alerts when log level >= threshold.
 type levelEvaluator struct {
 	r        *Rule
 	minLevel int
@@ -254,7 +236,6 @@ func (le *levelEvaluator) evaluate(line *logline.LogLine) *Event {
 
 func (le *levelEvaluator) rule() *Rule { return le.r }
 
-// errorRateEvaluator fires when error count exceeds threshold in a sliding window.
 type errorRateEvaluator struct {
 	r          *Rule
 	mu         sync.Mutex
@@ -270,7 +251,6 @@ func (er *errorRateEvaluator) evaluate(line *logline.LogLine) *Event {
 	if !ok {
 		return nil
 	}
-	// Only count error and fatal levels
 	if lineLevel < logline.LogLevels["error"] {
 		return nil
 	}
@@ -279,10 +259,8 @@ func (er *errorRateEvaluator) evaluate(line *logline.LogLine) *Event {
 	er.mu.Lock()
 	defer er.mu.Unlock()
 
-	// Append current timestamp
 	er.timestamps = append(er.timestamps, now)
 
-	// Remove timestamps outside the window
 	cutoff := now.Add(-er.r.Window)
 	start := 0
 	for start < len(er.timestamps) && er.timestamps[start].Before(cutoff) {
@@ -292,7 +270,6 @@ func (er *errorRateEvaluator) evaluate(line *logline.LogLine) *Event {
 
 	count := len(er.timestamps)
 	if count >= er.r.Threshold {
-		// Reset window after firing to avoid continuous alerts
 		er.timestamps = er.timestamps[:0]
 		return &Event{
 			Rule:      er.r.Name,
@@ -309,18 +286,16 @@ func (er *errorRateEvaluator) evaluate(line *logline.LogLine) *Event {
 
 func (er *errorRateEvaluator) rule() *Rule { return er.r }
 
-// healthChangeEvaluator is a placeholder — health changes are handled by ProcessHealthChange directly.
 type healthChangeEvaluator struct {
 	r *Rule
 }
 
 func (he *healthChangeEvaluator) evaluate(_ *logline.LogLine) *Event {
-	return nil // health changes don't come from log lines
+	return nil
 }
 
 func (he *healthChangeEvaluator) rule() *Rule { return he.r }
 
-// compileRule converts a Rule into a compiled evaluator.
 func compileRule(r *Rule) (evaluator, error) {
 	switch r.Type {
 	case RuleTypePattern:

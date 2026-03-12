@@ -8,15 +8,11 @@ import (
 	"regexp"
 )
 
-// Tailer is the interface for different source type implementations.
 type Tailer interface {
-	// Start begins tailing in a goroutine.
 	Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error)
 
-	// Stop stops the tailing process.
 	Stop() error
 
-	// GetSourceName returns the source name.
 	GetSourceName() string
 }
 
@@ -63,7 +59,6 @@ func (b *BaseTailer) GetSourceName() string {
 // Allows alphanumeric, dash, underscore, dot, colon, and @ (for systemd units).
 var safeNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:@-]*$`)
 
-// ValidateExternalName checks that a name is safe to pass to external commands.
 func ValidateExternalName(name, kind string) error {
 	if name == "" {
 		return fmt.Errorf("%s name cannot be empty", kind)

@@ -23,8 +23,6 @@ func newTestLine(level, message string) *logline.LogLine {
 	}
 }
 
-// --- ConsoleWriter tests ---
-
 func TestConsoleWriter_FormatOutput(t *testing.T) {
 	var buf bytes.Buffer
 	cw := NewConsoleWriter(WithOutput(&buf), WithNoColor())
@@ -104,8 +102,6 @@ func TestConsoleWriter_CustomTimestamp(t *testing.T) {
 	}
 }
 
-// --- JSONWriter tests ---
-
 func TestJSONWriter_ValidJSON(t *testing.T) {
 	var buf bytes.Buffer
 	jw := NewJSONWriter(&buf)
@@ -117,7 +113,6 @@ func TestJSONWriter_ValidJSON(t *testing.T) {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	// Verify it's valid JSON
 	var parsed logline.LogLine
 	if err := json.Unmarshal(buf.Bytes(), &parsed); err != nil {
 		t.Fatalf("output is not valid JSON: %v\nGot: %s", err, buf.String())
@@ -153,8 +148,6 @@ func TestJSONWriter_NDJSON(t *testing.T) {
 		}
 	}
 }
-
-// --- FileWriter tests ---
 
 func TestFileWriter_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
@@ -244,8 +237,6 @@ func TestFileWriter_InvalidPath(t *testing.T) {
 		t.Error("expected error for invalid path, got nil")
 	}
 }
-
-// --- FileWriter rotation tests ---
 
 func TestFileWriter_RotateBySize(t *testing.T) {
 	dir := t.TempDir()

@@ -351,7 +351,7 @@ func TestValidateConfig_AlertsInvalidCooldown(t *testing.T) {
 
 func TestValidateConfig_AlertsDisabledSkipsValidation(t *testing.T) {
 	cfg := validBaseConfig()
-	cfg.Alerts = &AlertsConfig{Enabled: false} // no rules, but disabled so ok
+	cfg.Alerts = &AlertsConfig{Enabled: false}
 	if err := ValidateConfig(cfg); err != nil {
 		t.Fatalf("disabled alerts should not be validated, got: %v", err)
 	}

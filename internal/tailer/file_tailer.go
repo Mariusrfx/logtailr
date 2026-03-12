@@ -20,7 +20,6 @@ const (
 	maxLineSize    = 256 * 1024 // 256KB max per log line
 )
 
-// FileTailer reads log lines from a file, optionally following new writes.
 type FileTailer struct {
 	BaseTailer
 	path   string

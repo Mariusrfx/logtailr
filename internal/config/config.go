@@ -26,16 +26,14 @@ var validAlertSeverities = map[string]bool{
 	"critical": true,
 }
 
-// Config represents the full application configuration.
 type Config struct {
 	Sources    []logline.SourceConfig `mapstructure:"sources"`
 	Global     GlobalConfig           `mapstructure:"global"`
 	Outputs    OutputsConfig          `mapstructure:"outputs"`
 	Alerts     *AlertsConfig          `mapstructure:"alerts"`
-	AllowLocal bool                   `mapstructure:"-"` // runtime flag, not from YAML
+	AllowLocal bool                   `mapstructure:"-"`
 }
 
-// AlertsConfig holds the alerts configuration.
 type AlertsConfig struct {
 	Enabled         bool              `mapstructure:"enabled"`
 	DefaultCooldown string            `mapstructure:"default_cooldown"`
@@ -43,18 +41,15 @@ type AlertsConfig struct {
 	Rules           []AlertRuleConfig `mapstructure:"rules"`
 }
 
-// AlertNotifyConfig holds alert notification destinations.
 type AlertNotifyConfig struct {
 	Console bool                `mapstructure:"console"`
 	Webhook *AlertWebhookConfig `mapstructure:"webhook"`
 }
 
-// AlertWebhookConfig holds webhook settings for alerts.
 type AlertWebhookConfig struct {
 	URL string `mapstructure:"url"`
 }
 
-// AlertRuleConfig holds the configuration for a single alert rule.
 type AlertRuleConfig struct {
 	Name      string `mapstructure:"name"`
 	Type      string `mapstructure:"type"`
@@ -67,7 +62,6 @@ type AlertRuleConfig struct {
 	Cooldown  string `mapstructure:"cooldown"`
 }
 
-// GlobalConfig holds global settings.
 type GlobalConfig struct {
 	Level      string `mapstructure:"level"`
 	Regex      string `mapstructure:"regex"`
@@ -76,14 +70,12 @@ type GlobalConfig struct {
 	ShowHealth bool   `mapstructure:"show_health"`
 }
 
-// OutputsConfig holds configuration for output destinations.
 type OutputsConfig struct {
 	OpenSearch *OpenSearchOutputConfig `mapstructure:"opensearch"`
 	Webhook    *WebhookOutputConfig    `mapstructure:"webhook"`
 	File       *FileOutputConfig       `mapstructure:"file"`
 }
 
-// FileOutputConfig holds file output settings with rotation.
 type FileOutputConfig struct {
 	Path     string `mapstructure:"path"`
 	MaxSize  string `mapstructure:"max_size"`
@@ -91,7 +83,6 @@ type FileOutputConfig struct {
 	Compress bool   `mapstructure:"compress"`
 }
 
-// OpenSearchOutputConfig holds OpenSearch connection settings.
 type OpenSearchOutputConfig struct {
 	Enabled       bool     `mapstructure:"enabled"`
 	Hosts         []string `mapstructure:"hosts"`
@@ -106,7 +97,6 @@ type OpenSearchOutputConfig struct {
 	DashboardsURL string   `mapstructure:"dashboards_url"`
 }
 
-// WebhookOutputConfig holds webhook settings.
 type WebhookOutputConfig struct {
 	Enabled      bool   `mapstructure:"enabled"`
 	URL          string `mapstructure:"url"`
@@ -120,6 +110,7 @@ var validSourceTypes = map[string]bool{
 	logline.SourceTypeDocker:     true,
 	logline.SourceTypeJournalctl: true,
 	logline.SourceTypeStdin:      true,
+	logline.SourceTypeKubernetes: true,
 }
 
 var validParsers = map[string]bool{
@@ -136,9 +127,7 @@ var validOutputs = map[string]bool{
 	"":        true, // defaults to console
 }
 
-// LoadConfig reads and parses a YAML config file.
 func LoadConfig(path string, allowLocal bool) (*Config, error) {
-	// Validate path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid config path: %w", err)
@@ -187,7 +176,6 @@ func LoadConfig(path string, allowLocal bool) (*Config, error) {
 	return &cfg, nil
 }
 
-// ValidateConfig checks that the configuration is valid.
 func ValidateConfig(cfg *Config) error {
 	if len(cfg.Sources) == 0 {
 		return fmt.Errorf("config: at least one source is required")
@@ -204,7 +192,7 @@ func ValidateConfig(cfg *Config) error {
 		seen[src.Name] = true
 
 		if !validSourceTypes[src.Type] {
-			return fmt.Errorf("config: source %q has invalid type %q (must be file, docker, or journalctl)", src.Name, src.Type)
+			return fmt.Errorf("config: source %q has invalid type %q (must be file, docker, journalctl, stdin, or kubernetes)", src.Name, src.Type)
 		}
 
 		if src.Type == logline.SourceTypeFile && src.Path == "" {
@@ -215,6 +203,24 @@ func ValidateConfig(cfg *Config) error {
 		}
 		if src.Type == logline.SourceTypeJournalctl && src.Unit == "" {
 			return fmt.Errorf("config: source %q of type journalctl requires a unit", src.Name)
+		}
+		if src.Type == logline.SourceTypeKubernetes {
+			if src.Pod == "" && src.LabelSelector == "" {
+				return fmt.Errorf("config: source %q of type kubernetes requires a pod or label_selector", src.Name)
+			}
+			if src.Pod != "" && src.LabelSelector != "" {
+				return fmt.Errorf("config: source %q of type kubernetes cannot have both pod and label_selector", src.Name)
+			}
+			if src.LabelSelector != "" {
+				if err := validateLabelSelector(src.LabelSelector); err != nil {
+					return fmt.Errorf("config: source %q has invalid label_selector: %w", src.Name, err)
+				}
+			}
+			if src.Kubeconfig != "" {
+				if _, err := os.Stat(src.Kubeconfig); err != nil {
+					return fmt.Errorf("config: source %q has invalid kubeconfig path: %w", src.Name, err)
+				}
+			}
 		}
 
 		if src.Priority != "" {
@@ -233,6 +239,16 @@ func ValidateConfig(cfg *Config) error {
 			if src.OutputFormat != "json" {
 				return fmt.Errorf("config: source %q has invalid output_format %q (must be json)", src.Name, src.OutputFormat)
 			}
+		}
+
+		if src.Namespace != "" && src.Type != logline.SourceTypeKubernetes {
+			return fmt.Errorf("config: source %q: namespace is only valid for kubernetes sources", src.Name)
+		}
+		if src.LabelSelector != "" && src.Type != logline.SourceTypeKubernetes {
+			return fmt.Errorf("config: source %q: label_selector is only valid for kubernetes sources", src.Name)
+		}
+		if src.Kubeconfig != "" && src.Type != logline.SourceTypeKubernetes {
+			return fmt.Errorf("config: source %q: kubeconfig is only valid for kubernetes sources", src.Name)
 		}
 
 		if !validParsers[src.Parser] {
@@ -440,6 +456,26 @@ func ParseByteSize(s string) (int64, error) {
 		return 0, fmt.Errorf("size must be positive")
 	}
 	return n, nil
+}
+
+// labelSelectorPattern validates Kubernetes label selectors.
+// Allows: key=value, key!=value, key in (v1,v2), key notin (v1,v2), key, !key
+// Multiple selectors separated by commas.
+var labelSelectorPattern = regexp.MustCompile(`^[a-zA-Z0-9_./-]+(=[a-zA-Z0-9_./-]+|!=[a-zA-Z0-9_./-]+| in \([a-zA-Z0-9_.,/ -]+\)| notin \([a-zA-Z0-9_.,/ -]+\))?` +
+	`(,[a-zA-Z0-9_./-]+(=[a-zA-Z0-9_./-]+|!=[a-zA-Z0-9_./-]+| in \([a-zA-Z0-9_.,/ -]+\)| notin \([a-zA-Z0-9_.,/ -]+\))?)*$`)
+
+// validateLabelSelector checks that a Kubernetes label selector is safe and well-formed.
+func validateLabelSelector(selector string) error {
+	if selector == "" {
+		return fmt.Errorf("label selector cannot be empty")
+	}
+	if len(selector) > 1024 {
+		return fmt.Errorf("label selector too long (max 1024 chars)")
+	}
+	if !labelSelectorPattern.MatchString(selector) {
+		return fmt.Errorf("invalid label selector %q", selector)
+	}
+	return nil
 }
 
 // validateExternalURL checks that a URL is valid and not targeting internal/private networks (SSRF prevention).

@@ -22,7 +22,6 @@ const (
 	maxWebhookBatchTimeout     = 120 * time.Second
 )
 
-// WebhookConfig holds the configuration for the webhook writer.
 type WebhookConfig struct {
 	URL          string `mapstructure:"url"`
 	MinLevel     string `mapstructure:"min_level"`
@@ -30,7 +29,6 @@ type WebhookConfig struct {
 	BatchTimeout string `mapstructure:"batch_timeout"`
 }
 
-// webhookPayload is the JSON structure sent to the webhook endpoint.
 type webhookPayload struct {
 	Text   string           `json:"text"`
 	Logs   []webhookLogItem `json:"logs"`
@@ -45,7 +43,6 @@ type webhookLogItem struct {
 	Source    string `json:"source"`
 }
 
-// WebhookWriter sends batched log lines to an HTTP webhook endpoint.
 type WebhookWriter struct {
 	client       *http.Client
 	url          string
@@ -60,7 +57,6 @@ type WebhookWriter struct {
 	done   chan struct{}
 }
 
-// NewWebhookWriter creates a new WebhookWriter from config.
 func NewWebhookWriter(cfg WebhookConfig) (*WebhookWriter, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("webhook: url is required")
@@ -121,9 +117,7 @@ func NewWebhookWriter(cfg WebhookConfig) (*WebhookWriter, error) {
 	return ww, nil
 }
 
-// Write adds a log line to the batch. Flushes when batch is full.
 func (ww *WebhookWriter) Write(line *logline.LogLine) error {
-	// Filter by min level
 	lineLevel := logline.LogLevels[strings.ToLower(line.Level)]
 	if lineLevel < ww.minLevel {
 		return nil
@@ -147,7 +141,6 @@ func (ww *WebhookWriter) Write(line *logline.LogLine) error {
 	return nil
 }
 
-// Close flushes remaining logs and shuts down the writer.
 func (ww *WebhookWriter) Close() error {
 	ww.cancel()
 	<-ww.done
@@ -172,7 +165,6 @@ func (ww *WebhookWriter) flushLoop() {
 	}
 }
 
-// finalFlush sends remaining items using a background context (for use after cancel).
 func (ww *WebhookWriter) finalFlush() error {
 	ww.mu.Lock()
 	if len(ww.buffer) == 0 {
@@ -200,7 +192,6 @@ func (ww *WebhookWriter) flush() error {
 }
 
 func (ww *WebhookWriter) sendWithContext(ctx context.Context, items []webhookLogItem) error {
-	// Build summary text
 	levelCounts := make(map[string]int)
 	for _, item := range items {
 		levelCounts[item.Level]++

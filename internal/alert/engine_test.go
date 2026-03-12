@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// mockNotifier collects events for testing.
 type mockNotifier struct {
 	mu     sync.Mutex
 	events []*Event
@@ -62,7 +61,6 @@ func TestPatternRule(t *testing.T) {
 		}
 	}()
 
-	// Should match
 	engine.ProcessLine(&logline.LogLine{
 		Source:    "app",
 		Level:     "error",
@@ -70,7 +68,6 @@ func TestPatternRule(t *testing.T) {
 		Timestamp: time.Now(),
 	})
 
-	// Should not match
 	engine.ProcessLine(&logline.LogLine{
 		Source:    "app",
 		Level:     "info",
@@ -110,14 +107,12 @@ func TestPatternRule_SourceFilter(t *testing.T) {
 		}
 	}()
 
-	// Wrong source — should not match
 	engine.ProcessLine(&logline.LogLine{
 		Source:  "other",
 		Level:   "error",
 		Message: "ERROR in processing",
 	})
 
-	// Right source — should match
 	engine.ProcessLine(&logline.LogLine{
 		Source:  "app-logs",
 		Level:   "error",
@@ -152,12 +147,10 @@ func TestLevelRule(t *testing.T) {
 		}
 	}()
 
-	// Below threshold
 	engine.ProcessLine(&logline.LogLine{
 		Source: "app", Level: "error", Message: "some error",
 	})
 
-	// At threshold
 	engine.ProcessLine(&logline.LogLine{
 		Source: "app", Level: "fatal", Message: "crash",
 	})
@@ -191,7 +184,6 @@ func TestErrorRateRule(t *testing.T) {
 		}
 	}()
 
-	// Send 3 errors to hit threshold
 	for i := 0; i < 3; i++ {
 		engine.ProcessLine(&logline.LogLine{
 			Source: "app", Level: "error", Message: "db connection failed",
@@ -227,14 +219,12 @@ func TestErrorRateRule_InfoNotCounted(t *testing.T) {
 		}
 	}()
 
-	// Send info/warn — should not count
 	for i := 0; i < 10; i++ {
 		engine.ProcessLine(&logline.LogLine{
 			Source: "app", Level: "info", Message: "request processed",
 		})
 	}
 
-	// Give time for processing
 	time.Sleep(200 * time.Millisecond)
 
 	events := notifier.getEvents()
@@ -291,9 +281,7 @@ func TestHealthChangeRule_SourceFilter(t *testing.T) {
 		}
 	}()
 
-	// Wrong source
 	engine.ProcessHealthChange("other", health.StatusHealthy, health.StatusFailed)
-	// Right source
 	engine.ProcessHealthChange("important-app", health.StatusHealthy, health.StatusFailed)
 
 	events := notifier.getEvents()
@@ -322,7 +310,6 @@ func TestCooldown(t *testing.T) {
 		}
 	}()
 
-	// Fire twice quickly — second should be suppressed
 	engine.ProcessLine(&logline.LogLine{
 		Source: "app", Level: "error", Message: "first",
 	})
@@ -331,7 +318,6 @@ func TestCooldown(t *testing.T) {
 	})
 
 	events := waitForEvents(notifier, 1, 2*time.Second)
-	// Wait a bit more to confirm only 1
 	time.Sleep(200 * time.Millisecond)
 	events = notifier.getEvents()
 	if len(events) != 1 {
@@ -456,11 +442,9 @@ func TestProcessLineNonBlocking(t *testing.T) {
 		}
 	}()
 
-	// Fill the queue — should not block
 	for i := 0; i < processQueueSize+100; i++ {
 		engine.ProcessLine(&logline.LogLine{
 			Source: "app", Level: "error", Message: "msg",
 		})
 	}
-	// If we get here without deadlock, test passes
 }

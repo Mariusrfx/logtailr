@@ -2,12 +2,10 @@ package output
 
 import "logtailr/pkg/logline"
 
-// MultiWriter fans out log lines to multiple writers.
 type MultiWriter struct {
 	writers []Writer
 }
 
-// NewMultiWriter creates a writer that sends to all provided writers.
 func NewMultiWriter(writers ...Writer) *MultiWriter {
 	return &MultiWriter{writers: writers}
 }
