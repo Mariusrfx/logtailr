@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"logtailr/internal/aggregator"
 	"logtailr/internal/alert"
 	"logtailr/internal/api"
 	"logtailr/internal/config"
@@ -16,6 +17,7 @@ import (
 	"logtailr/internal/health"
 	"logtailr/internal/tailer"
 	"logtailr/pkg/logline"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -27,19 +29,21 @@ const (
 )
 
 var (
-	filePath    string
-	level       string
-	regex       string
-	follow      bool
-	parserFlag  string
-	outputFlag  string
-	outputPath  string
-	showHealth  bool
-	healthEvery int
-	apiEnabled  bool
-	apiPort     int
-	apiAddr     string
-	allowLocal  bool
+	filePath        string
+	level           string
+	regex           string
+	follow          bool
+	parserFlag      string
+	outputFlag      string
+	outputPath      string
+	showHealth      bool
+	healthEvery     int
+	apiEnabled      bool
+	apiPort         int
+	apiAddr         string
+	allowLocal      bool
+	aggregate       bool
+	aggregateWindow string
 )
 
 var tailCmd = &cobra.Command{
@@ -67,6 +71,8 @@ func init() {
 	tailCmd.Flags().IntVar(&apiPort, "api-port", 8080, "API server port (1024-65535)")
 	tailCmd.Flags().StringVar(&apiAddr, "api-addr", "127.0.0.1", "API server bind address")
 	tailCmd.Flags().BoolVar(&allowLocal, "allow-local", false, "Allow localhost/private IPs in URLs (disables SSRF prevention for local development)")
+	tailCmd.Flags().BoolVar(&aggregate, "aggregate", false, "Aggregate repeated log messages")
+	tailCmd.Flags().StringVar(&aggregateWindow, "aggregate-window", "5s", "Time window for aggregation (e.g. 3s, 10s)")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
@@ -146,6 +152,15 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		t.Start(ctx, logChan, errChan)
 	}
 
+	var agg *aggregator.Aggregator
+	if aggregate {
+		window, _ := time.ParseDuration(aggregateWindow)
+		if window <= 0 {
+			window = 5 * time.Second
+		}
+		agg = aggregator.New(window, 2)
+	}
+
 	printStartupBanner(sources)
 
 	if showHealth {
@@ -153,7 +168,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		startHealthUpdater(ctx, healthMonitor)
 	}
 
-	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer, alertEngine)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer, alertEngine, agg)
 
 	for _, t := range tailers {
 		_ = t.Stop()
@@ -182,6 +197,12 @@ func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *
 		}
 		if cfg.Global.ShowHealth {
 			showHealth = true
+		}
+		if cfg.Global.Aggregate && !cmd.Flags().Changed("aggregate") {
+			aggregate = true
+		}
+		if cfg.Global.AggregateWindow != "" && !cmd.Flags().Changed("aggregate-window") {
+			aggregateWindow = cfg.Global.AggregateWindow
 		}
 		return cfg.Sources, cfg, &cfg.Outputs, nil
 	}

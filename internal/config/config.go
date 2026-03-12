@@ -63,11 +63,13 @@ type AlertRuleConfig struct {
 }
 
 type GlobalConfig struct {
-	Level      string `mapstructure:"level"`
-	Regex      string `mapstructure:"regex"`
-	Output     string `mapstructure:"output"`
-	OutputPath string `mapstructure:"output_path"`
-	ShowHealth bool   `mapstructure:"show_health"`
+	Level           string `mapstructure:"level"`
+	Regex           string `mapstructure:"regex"`
+	Output          string `mapstructure:"output"`
+	OutputPath      string `mapstructure:"output_path"`
+	ShowHealth      bool   `mapstructure:"show_health"`
+	Aggregate       bool   `mapstructure:"aggregate"`
+	AggregateWindow string `mapstructure:"aggregate_window"`
 }
 
 type OutputsConfig struct {
@@ -266,6 +268,16 @@ func ValidateConfig(cfg *Config) error {
 
 	if cfg.Global.Output == "file" && cfg.Global.OutputPath == "" {
 		return fmt.Errorf("config: output type file requires output_path")
+	}
+
+	if cfg.Global.AggregateWindow != "" {
+		d, err := time.ParseDuration(cfg.Global.AggregateWindow)
+		if err != nil {
+			return fmt.Errorf("config: invalid aggregate_window: %w", err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("config: aggregate_window must be positive")
+		}
 	}
 
 	if err := validateOutputsConfig(&cfg.Outputs, cfg.AllowLocal); err != nil {

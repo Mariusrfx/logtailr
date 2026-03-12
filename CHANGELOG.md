@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-12
+
+### Added
+- **F5.3 Log Aggregation**: Detect repeated log messages (same source+level+message) and display a count instead of duplicates. Format: `message (x3 in last 2s)`. Configurable time window.
+- **Aggregation CLI flags**: `--aggregate` to enable, `--aggregate-window` to set the dedup window (default 5s)
+- **Aggregation config**: `global.aggregate: true` and `global.aggregate_window: "5s"` in YAML config
+- **Aggregation ticker**: Background goroutine flushes expired aggregation entries automatically, even when no new lines arrive
+- **F5.2 Auto-discovery command**: `logtailr discover` scans the system for log sources and generates configuration
+- **FileScanner**: Recursively scans `/var/log/` for `.log` files, skips empty and oversized (>1GB) files
+- **DockerScanner**: Lists running Docker containers via `docker ps`, each becomes a source config entry
+- **JournalctlScanner**: Lists active systemd services via `systemctl list-units`, filters `.service` units
+- **Discovery output**: `--output table` (default) shows tabular results, `--output yaml` prints YAML config to stdout
+- **Discovery save**: `--save config.yaml` writes generated config to file (refuses to overwrite existing files)
+- **Discovery scanner selection**: `--scan all|file|docker|journalctl` to choose which scanners to run
+
 ## [0.9.0] - 2026-03-12
 
 ### Added

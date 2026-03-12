@@ -18,6 +18,8 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 - **Prometheus metrics** — `logtailr_logs_total`, source health gauges, WebSocket client count
 - **YAML config** — Define multiple sources and outputs with a single config file
 - **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and webhook/console notifications
+- **Log aggregation** — Deduplicate repeated messages with configurable time window (e.g. `Connection timeout (x5 in last 3s)`)
+- **Auto-discovery** — Scan system for log sources (files, Docker containers, systemd services) and generate config
 - **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention
 
 ## Install
@@ -290,6 +292,55 @@ logtailr_active_sources 4
 logtailr_websocket_clients 2
 ```
 
+## Log aggregation
+
+Reduce noise from repeated messages with `--aggregate`:
+
+```bash
+logtailr tail --config config.yaml --aggregate
+logtailr tail --config config.yaml --aggregate --aggregate-window 10s
+```
+
+Or enable in config:
+
+```yaml
+global:
+  aggregate: true
+  aggregate_window: "5s"
+```
+
+Repeated messages (same source, level, and message) within the window are collapsed:
+
+```
+[2024-01-15 10:30:00] [app.log] ERROR: Connection timeout (x5 in last 3s)
+```
+
+## Auto-discovery
+
+Scan the system for log sources:
+
+```bash
+logtailr discover                          # Scan all (files, Docker, journalctl)
+logtailr discover --scan file,docker       # Scan only files and Docker
+logtailr discover --output yaml            # Print config as YAML
+logtailr discover --save config.yaml       # Save config to file
+```
+
+Example output:
+
+```
+Found 5 potential log source(s):
+
+  TYPE         NAME                    DETAIL
+  file         syslog                  /var/log/syslog
+  file         auth                    /var/log/auth.log
+  docker       nginx                   container=nginx
+  docker       postgres                container=postgres
+  journalctl   ssh.service             unit=ssh.service
+
+Use --save config.yaml to generate configuration file.
+```
+
 ## Supported log formats
 
 ### JSON
@@ -335,12 +386,15 @@ logtailr/
 │   └── openapi.json        # OpenAPI 3.1 spec
 ├── cmd/                    # CLI commands (cobra)
 │   ├── alerts.go
+│   ├── discover.go
 │   ├── root.go
 │   └── tail.go
 ├── internal/
+│   ├── aggregator/         # Log deduplication with time-windowed aggregation
 │   ├── alert/              # Alert engine, rules, notifiers, rate limiting
 │   ├── api/                # REST API, Prometheus metrics, WebSocket hub
 │   ├── config/             # YAML config loader + validation
+│   ├── discovery/          # Auto-discovery of log sources (file, Docker, journalctl)
 │   ├── filter/             # Level and regex filtering
 │   ├── health/             # Source health monitoring
 │   ├── output/             # Console, JSON, file, OpenSearch, webhook writers

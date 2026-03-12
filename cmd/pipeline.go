@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"logtailr/internal/aggregator"
 	"logtailr/internal/alert"
 	"logtailr/internal/api"
 	"logtailr/internal/filter"
@@ -23,18 +24,41 @@ func runPipeline(
 	healthMonitor *health.Monitor,
 	apiServer *api.Server,
 	alertEngine *alert.Engine,
+	agg *aggregator.Aggregator,
 ) error {
+	var aggChan <-chan []*aggregator.AggregatedLine
+	if agg != nil {
+		aggChan = agg.Expired()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
+			if agg != nil {
+				for _, r := range agg.Flush() {
+					writeAndBroadcast(r.Line, writer, apiServer)
+				}
+				agg.Stop()
+			}
 			fmt.Println("\n" + healthMonitor.Summary())
 			return nil
+
+		case expired := <-aggChan:
+			for _, r := range expired {
+				writeAndBroadcast(r.Line, writer, apiServer)
+			}
 
 		case err := <-errChan:
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 
 		case raw, ok := <-logChan:
 			if !ok {
+				if agg != nil {
+					for _, r := range agg.Flush() {
+						writeAndBroadcast(r.Line, writer, apiServer)
+					}
+					agg.Stop()
+				}
 				fmt.Println("\n" + healthMonitor.Summary())
 				return nil
 			}
@@ -65,13 +89,24 @@ func runPipeline(
 				continue
 			}
 
-			if err := writer.Write(parsed); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
+			if agg != nil {
+				results := agg.Process(parsed)
+				for _, r := range results {
+					writeAndBroadcast(r.Line, writer, apiServer)
+				}
+				continue
 			}
 
-			if apiServer != nil {
-				apiServer.Hub().Broadcast(parsed)
-			}
+			writeAndBroadcast(parsed, writer, apiServer)
 		}
+	}
+}
+
+func writeAndBroadcast(line *logline.LogLine, writer output.Writer, apiServer *api.Server) {
+	if err := writer.Write(line); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
+	}
+	if apiServer != nil {
+		apiServer.Hub().Broadcast(line)
 	}
 }
