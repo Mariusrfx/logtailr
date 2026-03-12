@@ -8,6 +8,7 @@ import (
 	"logtailr/internal/health"
 	"logtailr/pkg/logline"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -22,9 +23,12 @@ const (
 
 type FileTailer struct {
 	BaseTailer
-	path   string
-	follow bool
-	cancel context.CancelFunc
+	path        string
+	follow      bool
+	cancel      context.CancelFunc
+	startOffset int64
+	lastOffset  int64
+	mu          sync.Mutex
 }
 
 // NewFileTailer creates a new FileTailer.
@@ -43,6 +47,24 @@ func NewFileTailer(path string, follow bool, healthMonitor *health.Monitor) *Fil
 	}
 
 	return ft
+}
+
+func (ft *FileTailer) WithStartOffset(offset int64) *FileTailer {
+	ft.startOffset = offset
+	ft.lastOffset = offset
+	return ft
+}
+
+func (ft *FileTailer) LastOffset() int64 {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	return ft.lastOffset
+}
+
+func (ft *FileTailer) addOffset(n int64) {
+	ft.mu.Lock()
+	ft.lastOffset += n
+	ft.mu.Unlock()
 }
 
 // Start begins tailing the file. It reads existing content and, if follow is
@@ -71,6 +93,15 @@ func (ft *FileTailer) run(ctx context.Context, out chan<- *logline.LogLine, errC
 	}
 	defer func() { _ = file.Close() }()
 
+	if ft.startOffset > 0 {
+		if _, err := file.Seek(ft.startOffset, io.SeekStart); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: seek to offset %d failed, reading from start: %v\n", ft.startOffset, err)
+			ft.mu.Lock()
+			ft.lastOffset = 0
+			ft.mu.Unlock()
+		}
+	}
+
 	ft.ReportHealthy()
 
 	reader := bufio.NewReaderSize(file, readBufferSize)
@@ -98,6 +129,7 @@ func (ft *FileTailer) readLines(ctx context.Context, reader *bufio.Reader, out c
 
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
+			rawLen := int64(len(line))
 			// Trim the newline but keep the content
 			if line[len(line)-1] == '\n' {
 				line = line[:len(line)-1]
@@ -119,9 +151,12 @@ func (ft *FileTailer) readLines(ctx context.Context, reader *bufio.Reader, out c
 				}
 				select {
 				case out <- ll:
+					ft.addOffset(rawLen)
 				case <-ctx.Done():
 					return ctx.Err()
 				}
+			} else {
+				ft.addOffset(rawLen)
 			}
 		}
 		if err != nil {

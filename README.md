@@ -20,6 +20,7 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 - **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and webhook/console notifications
 - **Log aggregation** — Deduplicate repeated messages with configurable time window (e.g. `Connection timeout (x5 in last 3s)`)
 - **Auto-discovery** — Scan system for log sources (files, Docker containers, systemd services) and generate config
+- **Bookmarks** — Save file reading position and resume from where you left off with `--bookmark` and `--resume`
 - **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention
 
 ## Install
@@ -341,6 +342,20 @@ Found 5 potential log source(s):
 Use --save config.yaml to generate configuration file.
 ```
 
+## Bookmarks
+
+Save your reading position and resume later — only see new lines:
+
+```bash
+# Tail a file and save position on exit (Ctrl+C)
+logtailr tail --file /var/log/app.log --bookmark myapp
+
+# Resume from where you left off
+logtailr tail --file /var/log/app.log --resume myapp
+```
+
+Bookmarks are stored in `~/.logtailr/bookmarks.json` with the file path, byte offset, and inode. On resume, logtailr verifies the inode to detect file rotation — if the file was replaced, it warns and reads from the start.
+
 ## Supported log formats
 
 ### JSON
@@ -392,6 +407,7 @@ logtailr/
 ├── internal/
 │   ├── aggregator/         # Log deduplication with time-windowed aggregation
 │   ├── alert/              # Alert engine, rules, notifiers, rate limiting
+│   ├── bookmark/           # File position bookmarks for resume
 │   ├── api/                # REST API, Prometheus metrics, WebSocket hub
 │   ├── config/             # YAML config loader + validation
 │   ├── discovery/          # Auto-discovery of log sources (file, Docker, journalctl)

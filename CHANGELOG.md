@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-03-12
+
+### Added
+- **F5.4 Bookmarks**: Save and resume file reading position with `--bookmark` and `--resume` CLI flags
+- **Bookmark persistence**: Stores file path, byte offset, inode, and timestamp in `~/.logtailr/bookmarks.json`
+- **Inode verification**: Detects file rotation between sessions — warns and reads from start if inode changed
+- **Atomic writes**: Bookmark file uses write-to-tmp + rename pattern to prevent corruption
+- **Bookmark manager**: `internal/bookmark` package with Save, Load, List, Delete operations and name validation
+- **Offset tracking**: FileTailer tracks byte offset during reading for accurate bookmark save on shutdown
+
 ## [0.10.0] - 2026-03-12
 
 ### Added

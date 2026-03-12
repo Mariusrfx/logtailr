@@ -12,6 +12,7 @@ import (
 	"logtailr/internal/aggregator"
 	"logtailr/internal/alert"
 	"logtailr/internal/api"
+	"logtailr/internal/bookmark"
 	"logtailr/internal/config"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
@@ -44,6 +45,8 @@ var (
 	allowLocal      bool
 	aggregate       bool
 	aggregateWindow string
+	bookmarkName    string
+	resumeName      string
 )
 
 var tailCmd = &cobra.Command{
@@ -73,9 +76,25 @@ func init() {
 	tailCmd.Flags().BoolVar(&allowLocal, "allow-local", false, "Allow localhost/private IPs in URLs (disables SSRF prevention for local development)")
 	tailCmd.Flags().BoolVar(&aggregate, "aggregate", false, "Aggregate repeated log messages")
 	tailCmd.Flags().StringVar(&aggregateWindow, "aggregate-window", "5s", "Time window for aggregation (e.g. 3s, 10s)")
+	tailCmd.Flags().StringVar(&bookmarkName, "bookmark", "", "Save file position with this bookmark name on exit")
+	tailCmd.Flags().StringVar(&resumeName, "resume", "", "Resume from a saved bookmark position")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
+	if resumeName != "" && cfgFile != "" {
+		return fmt.Errorf("--resume only works with --file, not --config")
+	}
+	if bookmarkName != "" {
+		if err := bookmark.ValidateName(bookmarkName); err != nil {
+			return fmt.Errorf("--bookmark: %w", err)
+		}
+	}
+	if resumeName != "" {
+		if err := bookmark.ValidateName(resumeName); err != nil {
+			return fmt.Errorf("--resume: %w", err)
+		}
+	}
+
 	sources, fullCfg, outputsCfg, err := buildSources(cmd)
 	if err != nil {
 		return err
@@ -92,6 +111,31 @@ func runTail(cmd *cobra.Command, _ []string) error {
 
 	if outputFlag == "file" && outputPath == "" {
 		return fmt.Errorf("--output-path is required when --output=file")
+	}
+
+	var startOffset int64
+	if resumeName != "" {
+		mgr, err := bookmark.NewManager()
+		if err != nil {
+			return fmt.Errorf("bookmark: %w", err)
+		}
+		bm, err := mgr.Load(resumeName)
+		if err != nil {
+			return fmt.Errorf("bookmark %q: %w", resumeName, err)
+		}
+		if len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {
+			if bm.File != sources[0].Path {
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: bookmark file %q differs from --file %q, reading from start\n", bm.File, sources[0].Path)
+			} else {
+				inode, err := bookmark.GetInode(sources[0].Path)
+				if err == nil && inode != bm.Inode {
+					_, _ = fmt.Fprintf(os.Stderr, "Warning: file inode changed (was %d, now %d), reading from start\n", bm.Inode, inode)
+				} else if err == nil {
+					startOffset = bm.Offset
+					_, _ = fmt.Fprintf(os.Stderr, "Resuming from bookmark %q at offset %d\n", resumeName, startOffset)
+				}
+			}
+		}
 	}
 
 	ctx, cancel := context.WithCancel(cmd.Context())
@@ -142,11 +186,18 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	logChan := make(chan *logline.LogLine, logBufSize)
 	errChan := make(chan error, errBufSize)
 
+	var fileTailerRef *tailer.FileTailer
 	var tailers []tailer.Tailer
 	for _, src := range sources {
 		t, err := createTailer(src, healthMonitor)
 		if err != nil {
 			return fmt.Errorf("source %q: %w", src.Name, err)
+		}
+		if ft, ok := t.(*tailer.FileTailer); ok && startOffset > 0 {
+			ft.WithStartOffset(startOffset)
+			fileTailerRef = ft
+		} else if ft, ok := t.(*tailer.FileTailer); ok && bookmarkName != "" {
+			fileTailerRef = ft
 		}
 		tailers = append(tailers, t)
 		t.Start(ctx, logChan, errChan)
@@ -172,6 +223,27 @@ func runTail(cmd *cobra.Command, _ []string) error {
 
 	for _, t := range tailers {
 		_ = t.Stop()
+	}
+
+	if bookmarkName != "" && fileTailerRef != nil && len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {
+		mgr, err := bookmark.NewManager()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot save bookmark: %v\n", err)
+		} else {
+			offset := fileTailerRef.LastOffset()
+			inode, _ := bookmark.GetInode(sources[0].Path)
+			bm := &bookmark.Bookmark{
+				File:    sources[0].Path,
+				Offset:  offset,
+				Inode:   inode,
+				SavedAt: time.Now(),
+			}
+			if err := mgr.Save(bookmarkName, bm); err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot save bookmark: %v\n", err)
+			} else {
+				_, _ = fmt.Fprintf(os.Stderr, "Bookmark %q saved at offset %d\n", bookmarkName, offset)
+			}
+		}
 	}
 
 	return result
