@@ -16,9 +16,12 @@ import (
 	"logtailr/internal/config"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
+	"logtailr/internal/store"
 	"logtailr/internal/tailer"
 	"logtailr/pkg/logline"
 	"time"
+
+	"github.com/spf13/viper"
 
 	"github.com/spf13/cobra"
 )
@@ -95,7 +98,21 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	sources, fullCfg, outputsCfg, err := buildSources(cmd)
+	// Try loading from DB first, fallback to YAML
+	var dbStore *store.Store
+	if dbURLVal := viper.GetString("database.url"); dbURLVal != "" {
+		ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+		st, err := store.New(ctx, dbURLVal)
+		cancel()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot connect to database, falling back to YAML: %v\n", err)
+		} else {
+			dbStore = st
+			defer dbStore.Close()
+		}
+	}
+
+	sources, fullCfg, outputsCfg, err := buildSources(cmd, dbStore)
 	if err != nil {
 		return err
 	}
@@ -176,6 +193,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			Monitor:     healthMonitor,
 			Config:      fullCfg,
 			AlertEngine: alertEngine,
+			Store:       dbStore,
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
@@ -249,33 +267,24 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	return result
 }
 
-func buildSources(cmd *cobra.Command) ([]logline.SourceConfig, *config.Config, *config.OutputsConfig, error) {
+func buildSources(cmd *cobra.Command, dbStore *store.Store) ([]logline.SourceConfig, *config.Config, *config.OutputsConfig, error) {
+	// Try loading from database first
+	if dbStore != nil {
+		cfg, err := config.LoadFromStore(cmd.Context(), dbStore)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot load config from DB, falling back to YAML: %v\n", err)
+		} else if len(cfg.Sources) > 0 {
+			applyGlobalOverrides(cmd, &cfg.Global)
+			return cfg.Sources, cfg, &cfg.Outputs, nil
+		}
+	}
+
 	if cfgFile != "" {
 		cfg, err := config.LoadConfig(cfgFile, allowLocal)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if cfg.Global.Level != "" && !cmd.Flags().Changed("level") {
-			level = cfg.Global.Level
-		}
-		if cfg.Global.Regex != "" && regex == "" {
-			regex = cfg.Global.Regex
-		}
-		if cfg.Global.Output != "" && outputFlag == "console" {
-			outputFlag = cfg.Global.Output
-		}
-		if cfg.Global.OutputPath != "" && outputPath == "" {
-			outputPath = cfg.Global.OutputPath
-		}
-		if cfg.Global.ShowHealth {
-			showHealth = true
-		}
-		if cfg.Global.Aggregate && !cmd.Flags().Changed("aggregate") {
-			aggregate = true
-		}
-		if cfg.Global.AggregateWindow != "" && !cmd.Flags().Changed("aggregate-window") {
-			aggregateWindow = cfg.Global.AggregateWindow
-		}
+		applyGlobalOverrides(cmd, &cfg.Global)
 		return cfg.Sources, cfg, &cfg.Outputs, nil
 	}
 
@@ -340,5 +349,29 @@ func createTailer(src logline.SourceConfig, monitor *health.Monitor) (tailer.Tai
 		return tailer.NewStdinTailer(monitor), nil
 	default:
 		return nil, fmt.Errorf("unsupported source type %q", src.Type)
+	}
+}
+
+func applyGlobalOverrides(cmd *cobra.Command, g *config.GlobalConfig) {
+	if g.Level != "" && !cmd.Flags().Changed("level") {
+		level = g.Level
+	}
+	if g.Regex != "" && regex == "" {
+		regex = g.Regex
+	}
+	if g.Output != "" && outputFlag == "console" {
+		outputFlag = g.Output
+	}
+	if g.OutputPath != "" && outputPath == "" {
+		outputPath = g.OutputPath
+	}
+	if g.ShowHealth {
+		showHealth = true
+	}
+	if g.Aggregate && !cmd.Flags().Changed("aggregate") {
+		aggregate = true
+	}
+	if g.AggregateWindow != "" && !cmd.Flags().Changed("aggregate-window") {
+		aggregateWindow = g.AggregateWindow
 	}
 }

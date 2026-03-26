@@ -9,6 +9,7 @@ import (
 	"logtailr/internal/alert"
 	"logtailr/internal/config"
 	"logtailr/internal/health"
+	"logtailr/internal/store"
 	"net/http"
 	"time"
 
@@ -35,6 +36,7 @@ type Server struct {
 	registry    *prometheus.Registry
 	cfg         *config.Config
 	alertEngine *alert.Engine
+	store       *store.Store
 	startTime   time.Time
 	cancelCtx   context.CancelFunc
 }
@@ -44,6 +46,7 @@ type ServerConfig struct {
 	Monitor     *health.Monitor
 	Config      *config.Config
 	AlertEngine *alert.Engine
+	Store       *store.Store
 }
 
 func NewServer(sc ServerConfig) *Server {
@@ -56,6 +59,7 @@ func NewServer(sc ServerConfig) *Server {
 		registry:    registry,
 		cfg:         sc.Config,
 		alertEngine: sc.AlertEngine,
+		store:       sc.Store,
 		startTime:   time.Now(),
 	}
 	s.metrics = NewMetrics(registry)
@@ -69,6 +73,37 @@ func NewServer(sc ServerConfig) *Server {
 	mux.HandleFunc("GET /alerts", s.handleAlerts)
 	mux.HandleFunc("GET /alerts/rules", s.handleAlertRules)
 	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+
+	// CRUD endpoints (require store)
+	mux.HandleFunc("GET /api/v1/sources", s.handleListSources)
+	mux.HandleFunc("POST /api/v1/sources", s.handleCreateSource)
+	mux.HandleFunc("GET /api/v1/sources/{id}", s.handleGetSource)
+	mux.HandleFunc("PUT /api/v1/sources/{id}", s.handleUpdateSource)
+	mux.HandleFunc("DELETE /api/v1/sources/{id}", s.handleDeleteSource)
+
+	mux.HandleFunc("GET /api/v1/outputs", s.handleListOutputs)
+	mux.HandleFunc("POST /api/v1/outputs", s.handleCreateOutput)
+	mux.HandleFunc("GET /api/v1/outputs/{id}", s.handleGetOutput)
+	mux.HandleFunc("PUT /api/v1/outputs/{id}", s.handleUpdateOutput)
+	mux.HandleFunc("DELETE /api/v1/outputs/{id}", s.handleDeleteOutput)
+
+	mux.HandleFunc("GET /api/v1/alert-rules", s.handleListAlertRules)
+	mux.HandleFunc("POST /api/v1/alert-rules", s.handleCreateAlertRule)
+	mux.HandleFunc("GET /api/v1/alert-rules/{id}", s.handleGetAlertRule)
+	mux.HandleFunc("PUT /api/v1/alert-rules/{id}", s.handleUpdateAlertRule)
+	mux.HandleFunc("DELETE /api/v1/alert-rules/{id}", s.handleDeleteAlertRule)
+
+	mux.HandleFunc("GET /api/v1/alert-events", s.handleListAlertEvents)
+	mux.HandleFunc("POST /api/v1/alert-events/{id}/ack", s.handleAckAlertEvent)
+
+	mux.HandleFunc("GET /api/v1/settings/{key}", s.handleGetSetting)
+	mux.HandleFunc("PUT /api/v1/settings/{key}", s.handleSetSetting)
+
+	mux.HandleFunc("GET /api/v1/saved-searches", s.handleListSavedSearches)
+	mux.HandleFunc("POST /api/v1/saved-searches", s.handleCreateSavedSearch)
+	mux.HandleFunc("GET /api/v1/saved-searches/{id}", s.handleGetSavedSearch)
+	mux.HandleFunc("PUT /api/v1/saved-searches/{id}", s.handleUpdateSavedSearch)
+	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", s.handleDeleteSavedSearch)
 
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
 
