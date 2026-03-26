@@ -17,7 +17,7 @@ func (s *Server) handleListSavedSearches(w http.ResponseWriter, r *http.Request)
 	}
 	rows, err := s.store.ListSavedSearches(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"saved_searches": rows, "total": len(rows)})
@@ -34,7 +34,7 @@ func (s *Server) handleGetSavedSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := s.store.GetSavedSearchByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -45,7 +45,7 @@ func (s *Server) handleCreateSavedSearch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req savedSearchRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -55,7 +55,7 @@ func (s *Server) handleCreateSavedSearch(w http.ResponseWriter, r *http.Request)
 	}
 	row := savedSearchRequestToRow(&req)
 	if err := s.store.CreateSavedSearch(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, http.StatusConflict, "already exists")
 		return
 	}
 	writeJSON(w, http.StatusCreated, row)
@@ -71,14 +71,14 @@ func (s *Server) handleUpdateSavedSearch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req savedSearchRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := savedSearchRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateSavedSearch(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -94,7 +94,7 @@ func (s *Server) handleDeleteSavedSearch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.store.DeleteSavedSearch(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

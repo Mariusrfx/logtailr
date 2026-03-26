@@ -41,6 +41,9 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid 'limit'")
 			return
 		}
+		if n > 1000 {
+			n = 1000
+		}
 		f.Limit = n
 	}
 	if v := q.Get("offset"); v != "" {
@@ -54,7 +57,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.store.ListAlertEvents(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": rows, "total": len(rows)})
@@ -70,7 +73,7 @@ func (s *Server) handleAckAlertEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.AcknowledgeAlertEvent(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "acknowledged"})

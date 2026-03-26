@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"logtailr/pkg/logline"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,8 +25,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if origin == "" {
 				return true
 			}
-			host := req.Host
-			return strings.Contains(origin, host)
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+			return u.Host == req.Host
 		},
 	}
 

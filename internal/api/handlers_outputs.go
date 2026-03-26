@@ -19,7 +19,7 @@ func (s *Server) handleListOutputs(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.store.ListOutputs(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"outputs": rows, "total": len(rows)})
@@ -36,7 +36,7 @@ func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := s.store.GetOutputByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -47,7 +47,7 @@ func (s *Server) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req outputRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -55,9 +55,17 @@ func (s *Server) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and type are required")
 		return
 	}
+	if !validOutputTypes[req.Type] {
+		writeError(w, http.StatusBadRequest, "invalid output type")
+		return
+	}
+	if len(req.Name) > maxFieldLen {
+		writeError(w, http.StatusBadRequest, "field too long")
+		return
+	}
 	row := outputRequestToRow(&req)
 	if err := s.store.CreateOutput(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, http.StatusConflict, "output already exists or invalid data")
 		return
 	}
 	writeJSON(w, http.StatusCreated, row)
@@ -73,14 +81,14 @@ func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req outputRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := outputRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateOutput(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -96,7 +104,7 @@ func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.DeleteOutput(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
