@@ -31,7 +31,12 @@ type Config struct {
 	Global     GlobalConfig           `mapstructure:"global"`
 	Outputs    OutputsConfig          `mapstructure:"outputs"`
 	Alerts     *AlertsConfig          `mapstructure:"alerts"`
+	Database   *DatabaseConfig        `mapstructure:"database"`
 	AllowLocal bool                   `mapstructure:"-"`
+}
+
+type DatabaseConfig struct {
+	URL string `mapstructure:"url"`
 }
 
 type AlertsConfig struct {

@@ -4,6 +4,9 @@
 
 ## [0.11.0] - 2026-03-12
 
+### Changed
+- **F5.5 Search Histórico — Omitido**: Búsqueda en archivos locales descartada por redundante. OpenSearch ya indexa todos los logs con metadata completa. La búsqueda histórica se implementará como endpoint API (`GET /api/search`) sobre OpenSearch en Fase 6.
+
 ### Added
 - **F5.4 Bookmarks**: Save and resume file reading position with `--bookmark` and `--resume` CLI flags
 - **Bookmark persistence**: Stores file path, byte offset, inode, and timestamp in `~/.logtailr/bookmarks.json`

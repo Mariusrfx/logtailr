@@ -9,7 +9,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
+var (
+	cfgFile string
+	dbURL   string
+)
 
 var rootCmd = &cobra.Command{
 	Use:     "logtailr",
@@ -26,6 +29,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.PersistentFlags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (env: LOGTAILR_DB_URL)")
 }
 
 func initConfig() {
@@ -57,6 +61,11 @@ func initConfig() {
 	}
 
 	viper.AutomaticEnv()
+	viper.SetEnvPrefix("LOGTAILR")
+
+	// Bind --db-url flag and LOGTAILR_DB_URL env var
+	_ = viper.BindPFlag("database.url", rootCmd.PersistentFlags().Lookup("db-url"))
+	_ = viper.BindEnv("database.url", "LOGTAILR_DB_URL")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
