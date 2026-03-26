@@ -1,6 +1,24 @@
 package alert
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// EventStore is an optional interface for persisting alert events to a database.
+type EventStore interface {
+	CreateAlertEvent(ctx context.Context, e *StoredEvent) error
+}
+
+// StoredEvent is the struct passed to EventStore for persistence.
+type StoredEvent struct {
+	RuleName string
+	Severity string
+	Message  string
+	Source   string
+	Count    int
+	FiredAt  time.Time
+}
 
 type Severity string
 

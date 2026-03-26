@@ -181,6 +181,9 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("alerts: %w", err)
 		}
+		if dbStore != nil {
+			alertEngine.SetEventStore(store.NewAlertEventAdapter(dbStore))
+		}
 		defer func() { _ = alertEngine.Close() }()
 	}
 

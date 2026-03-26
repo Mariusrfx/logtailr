@@ -1,6 +1,7 @@
 package alert
 
 import (
+	"context"
 	"fmt"
 	"logtailr/internal/health"
 	"logtailr/pkg/logline"
@@ -25,6 +26,7 @@ type Engine struct {
 	evaluators []evaluator
 	notifiers  []Notifier
 	limiter    *rateLimiter
+	eventStore EventStore
 
 	recentMu sync.RWMutex
 	recent   []*Event
@@ -67,6 +69,12 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 	go e.processLoop()
 
 	return e, nil
+}
+
+// SetEventStore sets an optional store for persisting alert events to a database.
+// When set, fired events are persisted in addition to the in-memory recent list.
+func (e *Engine) SetEventStore(es EventStore) {
+	e.eventStore = es
 }
 
 func (e *Engine) ProcessLine(line *logline.LogLine) {
@@ -178,6 +186,21 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 	}
 	e.recent = append(e.recent, event)
 	e.recentMu.Unlock()
+
+	// Persist to database if store is configured
+	if e.eventStore != nil {
+		se := &StoredEvent{
+			RuleName: event.Rule,
+			Severity: event.Severity,
+			Message:  event.Message,
+			Source:   event.Source,
+			Count:    event.Count,
+			FiredAt:  event.Timestamp,
+		}
+		if err := e.eventStore.CreateAlertEvent(context.Background(), se); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "alert persist error: %v\n", err)
+		}
+	}
 
 	for _, n := range e.notifiers {
 		if err := n.Notify(event); err != nil {
