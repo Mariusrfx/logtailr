@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"logtailr/internal/api"
 	"logtailr/internal/bookmark"
 	"logtailr/internal/config"
+	"logtailr/internal/configwatch"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
 	"logtailr/internal/store"
@@ -197,6 +199,24 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
+	}
+
+	// Start config watcher if DB is available
+	if dbStore != nil {
+		cw := configwatch.New(dbStore, 5*time.Second)
+		cw.OnChange(configwatch.ChangeSources, func(_ configwatch.ChangeType) {
+			log.Println("Config change detected: sources updated (restart required to apply)")
+		})
+		cw.OnChange(configwatch.ChangeOutputs, func(_ configwatch.ChangeType) {
+			log.Println("Config change detected: outputs updated (restart required to apply)")
+		})
+		cw.OnChange(configwatch.ChangeAlertRules, func(_ configwatch.ChangeType) {
+			log.Println("Config change detected: alert rules updated (restart required to apply)")
+		})
+		cw.OnChange(configwatch.ChangeSettings, func(_ configwatch.ChangeType) {
+			log.Println("Config change detected: settings updated (restart required to apply)")
+		})
+		cw.Start(ctx)
 	}
 
 	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
