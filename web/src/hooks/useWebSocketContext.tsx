@@ -41,7 +41,9 @@ export function WsProvider({ children }: WsProviderProps) {
     setStatus("connecting")
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
     const host = window.location.host
-    const ws = new WebSocket(`${protocol}//${host}/ws/logs`)
+    const token = localStorage.getItem("logtailr_api_token")
+    const params = token ? `?token=${encodeURIComponent(token)}` : ""
+    const ws = new WebSocket(`${protocol}//${host}/ws/logs${params}`)
 
     ws.onopen = () => {
       if (mountedRef.current) setStatus("connected")

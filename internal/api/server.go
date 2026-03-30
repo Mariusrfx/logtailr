@@ -122,7 +122,9 @@ func NewServer(sc ServerConfig) *Server {
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
 
 	var handler http.Handler = mux
+	handler = withRateLimit(handler, 300, 1*time.Minute) // 300 req/min per IP
 	handler = withAuth(handler, sc.APIToken)
+	handler = withSecurityHeaders(handler)
 	handler = withCORS(handler, allowedOrigin)
 
 	s.httpServer = &http.Server{
