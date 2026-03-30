@@ -8,7 +8,7 @@ import {
   ChevronRight,
   Circle,
 } from "lucide-react"
-import type { WsStatus } from "@/hooks/useWebSocket"
+import type { WsStatus } from "@/hooks/useWebSocketContext"
 import { cn } from "@/lib/utils"
 
 interface SidebarProps {

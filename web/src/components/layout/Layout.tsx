@@ -3,29 +3,21 @@ import { Outlet } from "react-router-dom"
 import { Sidebar } from "./Sidebar"
 import { Header } from "./Header"
 import { useTheme } from "@/hooks/useTheme"
-import { useWebSocket } from "@/hooks/useWebSocket"
 import { useHealth } from "@/hooks/useHealth"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useDynamicTitle } from "@/hooks/useDynamicTitle"
+import { WsProvider, useWsStatus } from "@/hooks/useWebSocketContext"
 import { cn } from "@/lib/utils"
 
-export function Layout() {
+function LayoutInner() {
   const { theme, toggle: toggleTheme } = useTheme()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const { health } = useHealth()
+  const wsStatus = useWsStatus()
 
   useKeyboardShortcuts()
   useDynamicTitle(health)
-
-  const handleWsMessage = useCallback(() => {
-    // Used by child pages individually
-  }, [])
-
-  const { status: wsStatus } = useWebSocket({
-    url: "/ws/logs",
-    onMessage: handleWsMessage,
-  })
 
   const toggleSidebar = useCallback(() => {
     if (window.innerWidth < 768) {
@@ -37,7 +29,6 @@ export function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/50 md:hidden"
@@ -45,7 +36,6 @@ export function Layout() {
         />
       )}
 
-      {/* Sidebar */}
       <div
         className={cn(
           "shrink-0 z-30",
@@ -61,7 +51,6 @@ export function Layout() {
         />
       </div>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header
           theme={theme}
@@ -76,5 +65,13 @@ export function Layout() {
         </main>
       </div>
     </div>
+  )
+}
+
+export function Layout() {
+  return (
+    <WsProvider>
+      <LayoutInner />
+    </WsProvider>
   )
 }

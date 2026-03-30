@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from "react"
-import { useWebSocket } from "./useWebSocket"
+import { useWsSubscribe } from "./useWebSocketContext"
 import type { LogLine } from "@/types"
 
 const MAX_LOGS = 100_000
+const RENDER_THROTTLE_MS = 100
 
 export interface LogFilters {
   levels: Set<string>
@@ -14,40 +15,56 @@ export function useLogs() {
   const [logs, setLogs] = useState<LogLine[]>([])
   const [paused, setPaused] = useState(false)
   const pausedRef = useRef(false)
+
+  // Mutable buffer — no re-renders on each push
   const bufferRef = useRef<LogLine[]>([])
+  const pauseBufferRef = useRef<LogLine[]>([])
+  const flushScheduled = useRef(false)
+
   const allSourcesRef = useRef<Set<string>>(new Set())
   const [allSources, setAllSources] = useState<string[]>([])
 
-  const handleMessage = useCallback((data: unknown) => {
-    const line = data as LogLine
+  // Flush buffer to state (throttled)
+  const scheduleFlush = useCallback(() => {
+    if (flushScheduled.current) return
+    flushScheduled.current = true
+
+    setTimeout(() => {
+      flushScheduled.current = false
+      const batch = bufferRef.current
+      if (batch.length === 0) return
+      bufferRef.current = []
+
+      setLogs((prev) => {
+        const merged = prev.length + batch.length > MAX_LOGS
+          ? [...prev.slice(-(MAX_LOGS - batch.length)), ...batch]
+          : [...prev, ...batch]
+        return merged
+      })
+    }, RENDER_THROTTLE_MS)
+  }, [])
+
+  const handleLine = useCallback((line: LogLine) => {
     if (!line.message && !line.level) return
 
-    if (line.source) {
-      if (!allSourcesRef.current.has(line.source)) {
-        allSourcesRef.current.add(line.source)
-        setAllSources(Array.from(allSourcesRef.current).sort())
-      }
+    if (line.source && !allSourcesRef.current.has(line.source)) {
+      allSourcesRef.current.add(line.source)
+      setAllSources(Array.from(allSourcesRef.current).sort())
     }
 
     if (pausedRef.current) {
-      bufferRef.current.push(line)
-      if (bufferRef.current.length > MAX_LOGS) {
-        bufferRef.current = bufferRef.current.slice(-MAX_LOGS)
+      pauseBufferRef.current.push(line)
+      if (pauseBufferRef.current.length > MAX_LOGS) {
+        pauseBufferRef.current = pauseBufferRef.current.slice(-MAX_LOGS)
       }
       return
     }
 
-    setLogs((prev) => {
-      const next = [...prev, line]
-      if (next.length > MAX_LOGS) return next.slice(-MAX_LOGS)
-      return next
-    })
-  }, [])
+    bufferRef.current.push(line)
+    scheduleFlush()
+  }, [scheduleFlush])
 
-  const { status } = useWebSocket({
-    url: "/ws/logs",
-    onMessage: handleMessage,
-  })
+  useWsSubscribe(handleLine)
 
   const pause = useCallback(() => {
     pausedRef.current = true
@@ -56,27 +73,29 @@ export function useLogs() {
 
   const resume = useCallback(() => {
     pausedRef.current = false
-    // Flush buffer
-    if (bufferRef.current.length > 0) {
-      setLogs((prev) => {
-        const merged = [...prev, ...bufferRef.current]
-        bufferRef.current = []
-        if (merged.length > MAX_LOGS) return merged.slice(-MAX_LOGS)
-        return merged
-      })
+    if (pauseBufferRef.current.length > 0) {
+      bufferRef.current.push(...pauseBufferRef.current)
+      pauseBufferRef.current = []
+      scheduleFlush()
     }
     setPaused(false)
-  }, [])
+  }, [scheduleFlush])
 
   const clear = useCallback(() => {
     setLogs([])
     bufferRef.current = []
+    pauseBufferRef.current = []
   }, [])
 
-  return { logs, paused, pause, resume, clear, wsStatus: status, allSources }
+  return { logs, paused, pause, resume, clear, allSources }
 }
 
 export function filterLogs(logs: LogLine[], filters: LogFilters): LogLine[] {
+  // Fast path: no filters active
+  if (filters.levels.size === 0 && filters.sources.size === 0 && !filters.regex) {
+    return logs
+  }
+
   let result = logs
 
   if (filters.levels.size > 0) {

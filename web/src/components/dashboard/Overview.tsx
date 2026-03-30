@@ -4,7 +4,7 @@ import { StatsCard } from "./StatsCard"
 import { SourceHealthCard } from "./SourceHealthCard"
 import { RecentErrors } from "./RecentErrors"
 import { useHealth } from "@/hooks/useHealth"
-import { useWebSocket } from "@/hooks/useWebSocket"
+import { useWsSubscribe } from "@/hooks/useWebSocketContext"
 import type { AlertEvent, SourceHealth } from "@/types"
 
 export function Overview() {
@@ -13,6 +13,7 @@ export function Overview() {
   const [alerts, setAlerts] = useState<AlertEvent[]>([])
   const [logCount, setLogCount] = useState(0)
   const logCountRef = useRef(0)
+  const throttleRef = useRef(false)
 
   // Fetch sources
   useEffect(() => {
@@ -26,8 +27,8 @@ export function Overview() {
         // ignore
       }
     }
-    fetchSources()
-    const id = setInterval(fetchSources, 5000)
+    void fetchSources()
+    const id = setInterval(() => void fetchSources(), 5000)
     return () => clearInterval(id)
   }, [])
 
@@ -43,21 +44,24 @@ export function Overview() {
         // ignore
       }
     }
-    fetchAlerts()
-    const id = setInterval(fetchAlerts, 5000)
+    void fetchAlerts()
+    const id = setInterval(() => void fetchAlerts(), 5000)
     return () => clearInterval(id)
   }, [])
 
-  // Count logs from WebSocket
-  const handleWsMessage = useCallback(() => {
+  // Count logs via shared WebSocket (throttled render)
+  const handleLine = useCallback(() => {
     logCountRef.current++
-    setLogCount(logCountRef.current)
+    if (!throttleRef.current) {
+      throttleRef.current = true
+      setTimeout(() => {
+        throttleRef.current = false
+        setLogCount(logCountRef.current)
+      }, 200)
+    }
   }, [])
 
-  useWebSocket({
-    url: "/ws/logs",
-    onMessage: handleWsMessage,
-  })
+  useWsSubscribe(handleLine)
 
   const errorCount = sources.reduce((sum, s) => sum + s.error_count, 0)
 
