@@ -53,6 +53,7 @@ var (
 	bookmarkName    string
 	resumeName      string
 	apiToken        string
+	webEnabled      bool
 )
 
 var tailCmd = &cobra.Command{
@@ -85,6 +86,7 @@ func init() {
 	tailCmd.Flags().StringVar(&bookmarkName, "bookmark", "", "Save file position with this bookmark name on exit")
 	tailCmd.Flags().StringVar(&resumeName, "resume", "", "Resume from a saved bookmark position")
 	tailCmd.Flags().StringVar(&apiToken, "api-token", "", "Bearer token for API authentication (env: LOGTAILR_API_TOKEN)")
+	tailCmd.Flags().BoolVar(&webEnabled, "web", false, "Serve embedded web dashboard (requires build-web)")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
@@ -208,6 +210,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			Store:       dbStore,
 			APIToken:    token,
 			AllowLocal:  allowLocal,
+			WebEnabled:  webEnabled,
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()

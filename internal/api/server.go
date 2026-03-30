@@ -10,6 +10,7 @@ import (
 	"logtailr/internal/config"
 	"logtailr/internal/health"
 	"logtailr/internal/store"
+	"logtailr/internal/web"
 	"net/http"
 	"time"
 
@@ -50,6 +51,7 @@ type ServerConfig struct {
 	Store       *store.Store
 	APIToken    string
 	AllowLocal  bool
+	WebEnabled  bool
 }
 
 func NewServer(sc ServerConfig) *Server {
@@ -110,6 +112,12 @@ func NewServer(sc ServerConfig) *Server {
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", s.handleDeleteSavedSearch)
 
 	mux.HandleFunc("POST /api/v1/import/yaml", s.handleImportYAML)
+
+	// Serve embedded frontend assets if --web is enabled
+	if sc.WebEnabled && web.HasAssets() {
+		mux.Handle("/", web.Handler())
+		log.Printf("Web dashboard enabled (embedded assets)")
+	}
 
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
 

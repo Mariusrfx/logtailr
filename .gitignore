@@ -1,1 +1,14 @@
 ROADMAP.md
+
+# IDE
+.idea/
+
+# Build artifacts
+bin/
+
+# Local config (may contain secrets)
+config.yaml
+
+# Generated frontend dist (rebuild with make build-web)
+internal/web/dist/*
+!internal/web/dist/placeholder.html

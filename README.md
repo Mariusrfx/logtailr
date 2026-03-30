@@ -26,23 +26,75 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 
 ## Install
 
+### Prerequisites
+
+- Go 1.25+ (`go version`)
+- Node.js 20+ and npm (`node --version`) — only needed for the web dashboard
+
+### CLI only (no dashboard)
+
 ```bash
 git clone https://github.com/Mariusrfx/logtailr.git
 cd logtailr
 make build
 ```
 
+### With web dashboard
+
+```bash
+git clone https://github.com/Mariusrfx/logtailr.git
+cd logtailr
+make build-all    # Builds frontend + Go binary with embedded dashboard
+```
+
 The binary will be at `bin/logtailr`.
 
 ## Quick start
 
-### Tail a single file
+### 1. Tail a single file (simplest)
 
 ```bash
 logtailr tail --file /var/log/app.log
 logtailr tail --file /var/log/app.log --level error
 logtailr tail --file /var/log/app.log --regex "timeout|connection refused"
-logtailr tail --file /var/log/app.log --show-health --health-every 10
+```
+
+### 2. Multi-source with API + Dashboard
+
+```bash
+# Create a config file (see config.example.yaml)
+logtailr tail --config config.yaml --api --web
+# Open http://localhost:8080 in your browser
+```
+
+### 3. Full setup with PostgreSQL (persistent config + CRUD API)
+
+```bash
+# 1. Start PostgreSQL (example with Docker)
+docker run -d --name logtailr-db -p 5432:5432 \
+  -e POSTGRES_DB=logtailr -e POSTGRES_PASSWORD=secret \
+  postgres:16
+
+# 2. Run database migrations
+export LOGTAILR_DB_URL="postgres://postgres:secret@localhost:5432/logtailr?sslmode=disable"
+logtailr migrate up
+
+# 3. Import your existing YAML config into the database
+logtailr import --config-file config.yaml
+
+# 4. Start with dashboard + API + DB-backed config
+logtailr tail --api --web --db-url "$LOGTAILR_DB_URL"
+# Open http://localhost:8080
+```
+
+With PostgreSQL mode, all configuration (sources, outputs, alert rules, settings) is managed via the CRUD API and hot-reloaded automatically — no restarts needed.
+
+### 4. Pipe from stdin
+
+```bash
+cat /var/log/app.log | logtailr tail --level error
+kubectl logs -f my-pod | logtailr tail --regex "ERROR|WARN"
+docker logs -f my-container | logtailr tail --output json
 ```
 
 ### Pipe from stdin
@@ -205,6 +257,42 @@ outputs:
 ```
 
 Multiple outputs can be active simultaneously (e.g. console + OpenSearch + webhook).
+
+## Web Dashboard
+
+Logtailr includes an embedded web dashboard for real-time log monitoring. Build with `make build-all` and enable with `--web`:
+
+```bash
+logtailr tail --config config.yaml --api --web
+# Open http://localhost:8080
+```
+
+### Pages
+
+| Page | Description |
+|------|-------------|
+| **Dashboard** (`/`) | Stats cards (total logs, errors, sources healthy, uptime), source health grid, recent alerts |
+| **Logs** (`/logs`) | Real-time log viewer with virtual scroll (100k+), level/regex/source filters, detail panel, pause/resume |
+| **Sources** (`/sources`) | Source cards with status badges, filter by status, detail view with error history |
+| **Config** (`/config`) | Configuration management (coming soon) |
+
+### Features
+
+- **Light mode (default) / Dark mode** — toggle with the sun/moon icon in the header, persists in localStorage
+- **Keyboard shortcuts** — `D` Dashboard, `L` Logs, `S` Sources
+- **Responsive** — sidebar collapses to drawer on mobile
+- **WebSocket connection** — status indicator in the sidebar (green/yellow/red)
+- **Dynamic page title** — shows failed source count in the browser tab
+
+### API authentication
+
+When deploying the dashboard on a network, secure it with a token:
+
+```bash
+logtailr tail --config config.yaml --api --web --api-token "my-secret-token"
+# Or via env var:
+LOGTAILR_API_TOKEN="my-secret-token" logtailr tail --config config.yaml --api --web
+```
 
 ## API & Monitoring
 
@@ -396,12 +484,25 @@ All formats are auto-detected if no parser is specified.
 ## Development
 
 ```bash
-make build    # Compile binary
-make test     # Run tests with race detector
-make vet      # Run go vet
-make lint     # Run govulncheck
-make clean    # Remove build artifacts
-make help     # Show all targets
+make build        # Compile Go binary (CLI only, no dashboard)
+make build-web    # Build frontend and copy to embed dir
+make build-all    # Build frontend + Go binary (full dashboard)
+make test         # Run tests with race detector
+make vet          # Run go vet
+make lint         # Run govulncheck
+make clean        # Remove build artifacts
+make help         # Show all targets
+```
+
+### Frontend development (hot reload)
+
+```bash
+# Terminal 1: Start Go backend
+logtailr tail --config config.yaml --api --api-addr 0.0.0.0
+
+# Terminal 2: Start Vite dev server with proxy to Go API
+cd web && npm run dev
+# Open http://localhost:5173 (Vite proxies /api, /health, /ws to localhost:8080)
 ```
 
 ## PostgreSQL mode
@@ -417,8 +518,9 @@ logtailr migrate up --db-url "postgres://user:pass@localhost:5432/logtailr?sslmo
 # Import existing YAML config into the database
 logtailr import --config-file config.yaml --db-url "postgres://..."
 
-# Start with DB-backed config
-logtailr tail --api --db-url "postgres://..."
+# Start with DB-backed config + dashboard
+logtailr tail --api --web --db-url "postgres://..."
+# Open http://localhost:8080
 ```
 
 The `--db-url` flag can also be set via the `LOGTAILR_DB_URL` environment variable or `database.url` in the YAML config file. When a database is available, logtailr loads configuration from it first and falls back to the YAML file if no sources are found.

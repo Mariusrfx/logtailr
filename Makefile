@@ -3,11 +3,20 @@ BUILD_DIR := bin
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  := -s -w -X logtailr/cmd.version=$(VERSION)
 
-.PHONY: build test vet lint clean run help
+.PHONY: build build-web test vet lint clean run help
 
-## build: Compile the binary into bin/
+## build-web: Build the frontend and copy to internal/web/dist/
+build-web:
+	cd web && npm install && npm run build
+	rm -rf internal/web/dist
+	cp -r web/dist internal/web/dist
+
+## build: Compile the binary into bin/ (run build-web first for dashboard)
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) .
+
+## build-all: Build frontend + Go binary
+build-all: build-web build
 
 ## test: Run all tests with race detector
 test:
