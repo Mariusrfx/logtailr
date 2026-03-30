@@ -37,6 +37,7 @@ type Server struct {
 	cfg         *config.Config
 	alertEngine *alert.Engine
 	store       *store.Store
+	allowLocal  bool
 	startTime   time.Time
 	cancelCtx   context.CancelFunc
 }
@@ -47,6 +48,8 @@ type ServerConfig struct {
 	Config      *config.Config
 	AlertEngine *alert.Engine
 	Store       *store.Store
+	APIToken    string
+	AllowLocal  bool
 }
 
 func NewServer(sc ServerConfig) *Server {
@@ -60,6 +63,7 @@ func NewServer(sc ServerConfig) *Server {
 		cfg:         sc.Config,
 		alertEngine: sc.AlertEngine,
 		store:       sc.Store,
+		allowLocal:  sc.AllowLocal,
 		startTime:   time.Now(),
 	}
 	s.metrics = NewMetrics(registry)
@@ -105,11 +109,17 @@ func NewServer(sc ServerConfig) *Server {
 	mux.HandleFunc("PUT /api/v1/saved-searches/{id}", s.handleUpdateSavedSearch)
 	mux.HandleFunc("DELETE /api/v1/saved-searches/{id}", s.handleDeleteSavedSearch)
 
+	mux.HandleFunc("POST /api/v1/import/yaml", s.handleImportYAML)
+
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
+
+	var handler http.Handler = mux
+	handler = withAuth(handler, sc.APIToken)
+	handler = withCORS(handler, allowedOrigin)
 
 	s.httpServer = &http.Server{
 		Addr:              sc.Addr,
-		Handler:           withCORS(mux, allowedOrigin),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,

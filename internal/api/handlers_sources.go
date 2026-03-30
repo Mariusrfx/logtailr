@@ -1,8 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"logtailr/internal/store"
 	"net/http"
+	"path/filepath"
+	"strings"
 )
 
 type sourceRequest struct {
@@ -75,6 +78,18 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "field too long")
 		return
 	}
+	if req.Type == "file" {
+		if err := validateSourcePath(req.Path); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.Type == "kubernetes" && req.Kubeconfig != "" {
+		if err := validateSourcePath(req.Kubeconfig); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
+			return
+		}
+	}
 	row := sourceRequestToRow(&req)
 	if err := s.store.CreateSource(r.Context(), row); err != nil {
 		writeError(w, http.StatusConflict, "source already exists or invalid data")
@@ -96,6 +111,18 @@ func (s *Server) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if req.Type == "file" && req.Path != "" {
+		if err := validateSourcePath(req.Path); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.Kubeconfig != "" {
+		if err := validateSourcePath(req.Kubeconfig); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
+			return
+		}
 	}
 	row := sourceRequestToRow(&req)
 	row.ID = id
@@ -120,6 +147,21 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateSourcePath checks that a file path is absolute and free from traversal attempts.
+func validateSourcePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("path is required for file sources")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("path must be absolute")
+	}
+	cleaned := filepath.Clean(path)
+	if strings.Contains(cleaned, "..") {
+		return fmt.Errorf("path must not contain '..' components")
+	}
+	return nil
 }
 
 func sourceRequestToRow(req *sourceRequest) *store.SourceRow {

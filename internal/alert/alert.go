@@ -8,6 +8,7 @@ import (
 // EventStore is an optional interface for persisting alert events to a database.
 type EventStore interface {
 	CreateAlertEvent(ctx context.Context, e *StoredEvent) error
+	DeleteAlertEventsOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
 // StoredEvent is the struct passed to EventStore for persistence.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"logtailr/internal/alert"
 )
@@ -27,4 +28,9 @@ func (a *AlertEventAdapter) CreateAlertEvent(ctx context.Context, e *alert.Store
 		FiredAt:  e.FiredAt,
 	}
 	return a.store.CreateAlertEvent(ctx, row)
+}
+
+// DeleteAlertEventsOlderThan removes events older than the given time.
+func (a *AlertEventAdapter) DeleteAlertEventsOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	return a.store.DeleteAlertEventsOlderThan(ctx, before)
 }

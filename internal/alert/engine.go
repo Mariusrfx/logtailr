@@ -13,8 +13,10 @@ import (
 )
 
 const (
-	maxRecentEvents  = 100
-	processQueueSize = 512
+	maxRecentEvents      = 100
+	processQueueSize     = 512
+	defaultRetentionDays = 30
+	cleanupInterval      = 1 * time.Hour
 )
 
 type evaluator interface {
@@ -34,8 +36,10 @@ type Engine struct {
 	ruleMu    sync.RWMutex
 	ruleStats map[string]*ruleState
 
-	processCh chan *logline.LogLine
-	done      chan struct{}
+	processCh  chan *logline.LogLine
+	done       chan struct{}
+	cleanupCtx context.Context
+	cleanupFn  context.CancelFunc
 }
 
 type ruleState struct {
@@ -56,6 +60,8 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 		stats[rules[i].Name] = &ruleState{}
 	}
 
+	cleanupCtx, cleanupFn := context.WithCancel(context.Background())
+
 	e := &Engine{
 		evaluators: evals,
 		notifiers:  notifiers,
@@ -64,6 +70,8 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 		ruleStats:  stats,
 		processCh:  make(chan *logline.LogLine, processQueueSize),
 		done:       make(chan struct{}),
+		cleanupCtx: cleanupCtx,
+		cleanupFn:  cleanupFn,
 	}
 
 	go e.processLoop()
@@ -73,8 +81,34 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 
 // SetEventStore sets an optional store for persisting alert events to a database.
 // When set, fired events are persisted in addition to the in-memory recent list.
+// Also starts automatic cleanup of old events.
 func (e *Engine) SetEventStore(es EventStore) {
 	e.eventStore = es
+	go e.cleanupLoop()
+}
+
+// cleanupLoop periodically deletes alert events older than the retention period.
+func (e *Engine) cleanupLoop() {
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-e.cleanupCtx.Done():
+			return
+		case <-ticker.C:
+			if e.eventStore == nil {
+				continue
+			}
+			before := time.Now().Add(-time.Duration(defaultRetentionDays) * 24 * time.Hour)
+			deleted, err := e.eventStore.DeleteAlertEventsOlderThan(context.Background(), before)
+			if err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "alert cleanup error: %v\n", err)
+			} else if deleted > 0 {
+				_, _ = fmt.Fprintf(os.Stderr, "alert cleanup: deleted %d event(s) older than %d days\n", deleted, defaultRetentionDays)
+			}
+		}
+	}
 }
 
 func (e *Engine) ProcessLine(line *logline.LogLine) {
@@ -184,6 +218,7 @@ func (e *Engine) ReloadRules(rules []Rule) error {
 func (e *Engine) Close() error {
 	close(e.processCh)
 	<-e.done
+	e.cleanupFn()
 
 	var firstErr error
 	for _, n := range e.notifiers {

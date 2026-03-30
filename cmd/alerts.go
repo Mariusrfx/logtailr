@@ -7,6 +7,7 @@ import (
 	"logtailr/internal/config"
 	"logtailr/internal/health"
 	"logtailr/internal/store"
+	"os"
 	"strings"
 	"time"
 )
@@ -135,6 +136,23 @@ func buildAlertNotifiers(cfg *config.AlertsConfig) []alert.Notifier {
 
 	if cfg.Notify.Webhook != nil && cfg.Notify.Webhook.URL != "" {
 		notifiers = append(notifiers, alert.NewWebhookNotifier(cfg.Notify.Webhook.URL))
+	}
+
+	if cfg.Notify.Email != nil && cfg.Notify.Email.Host != "" {
+		emailNotifier, err := alert.NewEmailNotifier(alert.EmailConfig{
+			Host:     cfg.Notify.Email.Host,
+			Port:     cfg.Notify.Email.Port,
+			From:     cfg.Notify.Email.From,
+			To:       cfg.Notify.Email.To,
+			Username: cfg.Notify.Email.Username,
+			Password: cfg.Notify.Email.Password,
+			TLS:      cfg.Notify.Email.TLS,
+		})
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: email notifier disabled: %v\n", err)
+		} else {
+			notifiers = append(notifiers, emailNotifier)
+		}
 	}
 
 	if len(notifiers) == 0 {

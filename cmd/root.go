@@ -67,6 +67,9 @@ func initConfig() {
 	_ = viper.BindPFlag("database.url", rootCmd.PersistentFlags().Lookup("db-url"))
 	_ = viper.BindEnv("database.url", "LOGTAILR_DB_URL")
 
+	// Bind LOGTAILR_API_TOKEN env var
+	_ = viper.BindEnv("api.token", "LOGTAILR_API_TOKEN")
+
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			fmt.Printf("Error reading config file: %v\n", err)

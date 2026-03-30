@@ -17,11 +17,12 @@ Concurrent multi-source log aggregator. Tail, parse, and filter logs from files,
 - **WebSocket streaming** — Real-time log streaming with level/source filters
 - **Prometheus metrics** — `logtailr_logs_total`, source health gauges, WebSocket client count
 - **YAML config** — Define multiple sources and outputs with a single config file
-- **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and webhook/console notifications
+- **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and console/webhook/email notifications
 - **Log aggregation** — Deduplicate repeated messages with configurable time window (e.g. `Connection timeout (x5 in last 3s)`)
 - **Auto-discovery** — Scan system for log sources (files, Docker containers, systemd services) and generate config
 - **Bookmarks** — Save file reading position and resume from where you left off with `--bookmark` and `--resume`
-- **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention
+- **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention, API token authentication, secret masking in responses
+- **Hot-reload** — Sources, outputs, and alert rules update automatically when changed in the database, no restart needed
 
 ## Install
 
@@ -211,7 +212,13 @@ Enable the API server with `--api`:
 
 ```bash
 logtailr tail --config config.yaml --api --api-port 8080
+
+# With authentication (recommended for non-local deployments)
+logtailr tail --config config.yaml --api --api-token "my-secret-token"
+# Or via env var: LOGTAILR_API_TOKEN="my-secret-token"
 ```
+
+When `--api-token` is set, all `/api/v1/*` endpoints require a `Authorization: Bearer <token>` header. Public endpoints (`/health`, `/metrics`, `/ws/logs`) remain unauthenticated. Without a token configured, the API is open (development mode).
 
 ### REST endpoints
 
@@ -242,7 +249,7 @@ const ws = new WebSocket('ws://localhost:8080/ws/logs?level=error&source=app.log
 
 ### Alerts
 
-Define rules to trigger alerts on specific conditions. Alerts support per-rule cooldown to prevent spam and can notify via console (stderr) or webhook:
+Define rules to trigger alerts on specific conditions. Alerts support per-rule cooldown to prevent spam and can notify via console (stderr), webhook, or email (SMTP):
 
 ```yaml
 alerts:
@@ -252,6 +259,14 @@ alerts:
     console: true
     webhook:
       url: "https://hooks.slack.com/services/XXX"
+    email:
+      host: "smtp.example.com"
+      port: 587
+      from: "alerts@example.com"
+      to: ["oncall@example.com"]
+      username: "alerts@example.com"
+      password: "${SMTP_PASSWORD}"
+      tls: true
   rules:
     - name: "fatal-errors"
       type: "level"
@@ -420,6 +435,7 @@ When both `--api` and `--db-url` are set, the following REST endpoints are avail
 | Alert Events | `GET /api/v1/alert-events`, `POST /api/v1/alert-events/{id}/ack` | Query and acknowledge fired alert events |
 | Saved Searches | `GET/POST /api/v1/saved-searches`, `GET/PUT/DELETE /api/v1/saved-searches/{id}` | Store reusable search filter definitions |
 | Settings | `GET/PUT /api/v1/settings/{key}` | Read and write global and alert settings |
+| Import | `POST /api/v1/import/yaml` | Import a YAML config file into the database |
 
 All CRUD endpoints require a database connection. Without one, they return `503 Service Unavailable`.
 
@@ -428,7 +444,8 @@ All CRUD endpoints require a database connection. Without one, they return `503 
 Logtailr watches the database for configuration changes every 5 seconds:
 
 - **Alert rules**: Reloaded automatically — new, updated, or removed rules take effect without restart
-- **Sources and outputs**: Detected but require a restart to apply (logged as warning)
+- **Sources**: Added, removed, or restarted automatically when config changes in DB
+- **Outputs**: Writer pipeline rebuilt automatically when output config changes in DB
 
 ### Migration commands
 
@@ -453,8 +470,10 @@ logtailr/
 │   ├── discover.go
 │   ├── import.go
 │   ├── migrate.go
+│   ├── output_manager.go   # Dynamic output writer swap for hot-reload
 │   ├── root.go
-│   └── tail.go
+│   ├── tail.go
+│   └── tailer_manager.go   # Dynamic tailer lifecycle for hot-reload
 ├── internal/
 │   ├── aggregator/         # Log deduplication with time-windowed aggregation
 │   ├── alert/              # Alert engine, rules, notifiers, rate limiting

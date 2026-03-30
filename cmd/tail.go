@@ -52,6 +52,7 @@ var (
 	aggregateWindow string
 	bookmarkName    string
 	resumeName      string
+	apiToken        string
 )
 
 var tailCmd = &cobra.Command{
@@ -83,6 +84,7 @@ func init() {
 	tailCmd.Flags().StringVar(&aggregateWindow, "aggregate-window", "5s", "Time window for aggregation (e.g. 3s, 10s)")
 	tailCmd.Flags().StringVar(&bookmarkName, "bookmark", "", "Save file position with this bookmark name on exit")
 	tailCmd.Flags().StringVar(&resumeName, "resume", "", "Resume from a saved bookmark position")
+	tailCmd.Flags().StringVar(&apiToken, "api-token", "", "Bearer token for API authentication (env: LOGTAILR_API_TOKEN)")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
@@ -169,11 +171,12 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	}()
 
 	healthMonitor := health.NewMonitor()
-	writer, err := createWriter(outputsCfg)
+	initialWriter, err := createWriter(outputsCfg)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = writer.Close() }()
+	outputMgr := NewOutputManager(initialWriter)
+	defer func() { _ = outputMgr.Close() }()
 
 	var alertEngine *alert.Engine
 	if fullCfg != nil && fullCfg.Alerts != nil && fullCfg.Alerts.Enabled {
@@ -193,25 +196,69 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("--api-port must be between 1024 and 65535, got %d", apiPort)
 		}
 		listenAddr := fmt.Sprintf("%s:%d", apiAddr, apiPort)
+		token := apiToken
+		if token == "" {
+			token = viper.GetString("api.token")
+		}
 		apiServer = api.NewServer(api.ServerConfig{
 			Addr:        listenAddr,
 			Monitor:     healthMonitor,
 			Config:      fullCfg,
 			AlertEngine: alertEngine,
 			Store:       dbStore,
+			APIToken:    token,
+			AllowLocal:  allowLocal,
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
+	}
+
+	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
+	errBufSize := min(errChannelBuffer*len(sources), maxChannelSize)
+	logChan := make(chan *logline.LogLine, logBufSize)
+	errChan := make(chan error, errBufSize)
+
+	tailerMgr := NewTailerManager(ctx, healthMonitor, logChan, errChan)
+	var fileTailerRef *tailer.FileTailer
+	for _, src := range sources {
+		t, err := createTailer(src, healthMonitor)
+		if err != nil {
+			return fmt.Errorf("source %q: %w", src.Name, err)
+		}
+		if ft, ok := t.(*tailer.FileTailer); ok && startOffset > 0 {
+			ft.WithStartOffset(startOffset)
+			fileTailerRef = ft
+		} else if ft, ok := t.(*tailer.FileTailer); ok && bookmarkName != "" {
+			fileTailerRef = ft
+		}
+
+		tailerMgr.mu.Lock()
+		tailerMgr.tailers[src.Name] = t
+		tailerMgr.sources[src.Name] = src
+		tailerMgr.mu.Unlock()
+
+		t.Start(ctx, logChan, errChan)
 	}
 
 	// Start config watcher if DB is available
 	if dbStore != nil {
 		cw := configwatch.New(dbStore, 5*time.Second)
 		cw.OnChange(configwatch.ChangeSources, func(_ configwatch.ChangeType) {
-			log.Println("Config change detected: sources updated (restart required to apply)")
+			newCfg, err := config.LoadFromStore(ctx, dbStore)
+			if err != nil {
+				log.Printf("Config change detected: sources updated but reload failed: %v", err)
+				return
+			}
+			log.Printf("Hot-reload: reconciling %d source(s)", len(newCfg.Sources))
+			tailerMgr.Reconcile(newCfg.Sources)
 		})
 		cw.OnChange(configwatch.ChangeOutputs, func(_ configwatch.ChangeType) {
-			log.Println("Config change detected: outputs updated (restart required to apply)")
+			newCfg, err := config.LoadFromStore(ctx, dbStore)
+			if err != nil {
+				log.Printf("Config change detected: outputs updated but reload failed: %v", err)
+				return
+			}
+			outputMgr.Swap(&newCfg.Outputs)
 		})
 		cw.OnChange(configwatch.ChangeAlertRules, func(_ configwatch.ChangeType) {
 			if alertEngine == nil {
@@ -230,31 +277,9 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			log.Printf("Alert rules reloaded: %d rule(s) active", len(rules))
 		})
 		cw.OnChange(configwatch.ChangeSettings, func(_ configwatch.ChangeType) {
-			log.Println("Config change detected: settings updated (restart required to apply)")
+			log.Println("Config change detected: settings updated (level/regex changes require restart)")
 		})
 		cw.Start(ctx)
-	}
-
-	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
-	errBufSize := min(errChannelBuffer*len(sources), maxChannelSize)
-	logChan := make(chan *logline.LogLine, logBufSize)
-	errChan := make(chan error, errBufSize)
-
-	var fileTailerRef *tailer.FileTailer
-	var tailers []tailer.Tailer
-	for _, src := range sources {
-		t, err := createTailer(src, healthMonitor)
-		if err != nil {
-			return fmt.Errorf("source %q: %w", src.Name, err)
-		}
-		if ft, ok := t.(*tailer.FileTailer); ok && startOffset > 0 {
-			ft.WithStartOffset(startOffset)
-			fileTailerRef = ft
-		} else if ft, ok := t.(*tailer.FileTailer); ok && bookmarkName != "" {
-			fileTailerRef = ft
-		}
-		tailers = append(tailers, t)
-		t.Start(ctx, logChan, errChan)
 	}
 
 	var agg *aggregator.Aggregator
@@ -273,11 +298,9 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		startHealthUpdater(ctx, healthMonitor)
 	}
 
-	result := runPipeline(ctx, logChan, errChan, regexFilter, writer, healthMonitor, apiServer, alertEngine, agg)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, outputMgr, healthMonitor, apiServer, alertEngine, agg)
 
-	for _, t := range tailers {
-		_ = t.Stop()
-	}
+	tailerMgr.StopAll()
 
 	if bookmarkName != "" && fileTailerRef != nil && len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {
 		mgr, err := bookmark.NewManager()

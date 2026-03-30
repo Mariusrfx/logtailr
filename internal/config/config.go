@@ -49,6 +49,17 @@ type AlertsConfig struct {
 type AlertNotifyConfig struct {
 	Console bool                `mapstructure:"console"`
 	Webhook *AlertWebhookConfig `mapstructure:"webhook"`
+	Email   *AlertEmailConfig   `mapstructure:"email"`
+}
+
+type AlertEmailConfig struct {
+	Host     string   `mapstructure:"host"`
+	Port     int      `mapstructure:"port"`
+	From     string   `mapstructure:"from"`
+	To       []string `mapstructure:"to"`
+	Username string   `mapstructure:"username"`
+	Password string   `mapstructure:"password"`
+	TLS      bool     `mapstructure:"tls"`
 }
 
 type AlertWebhookConfig struct {
@@ -132,6 +143,33 @@ var validOutputs = map[string]bool{
 	"json":    true,
 	"file":    true,
 	"":        true, // defaults to console
+}
+
+// ParseYAMLBytes parses a YAML config from raw bytes and validates it.
+func ParseYAMLBytes(data []byte, allowLocal bool) (*Config, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	v.SetDefault("global.level", "info")
+	v.SetDefault("global.output", "console")
+	v.SetDefault("global.show_health", false)
+
+	if err := v.ReadConfig(strings.NewReader(string(data))); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	cfg.AllowLocal = allowLocal
+
+	if err := ValidateConfig(&cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
 }
 
 func LoadConfig(path string, allowLocal bool) (*Config, error) {
@@ -309,7 +347,7 @@ func validateOutputsConfig(outputs *OutputsConfig, allowLocal bool) error {
 		}
 		if !allowLocal {
 			for _, h := range osCfg.Hosts {
-				if err := validateExternalURL(h); err != nil {
+				if err := ValidateExternalURL(h); err != nil {
 					return fmt.Errorf("config: opensearch host %q: %w", h, err)
 				}
 			}
@@ -339,7 +377,7 @@ func validateOutputsConfig(outputs *OutputsConfig, allowLocal bool) error {
 			return fmt.Errorf("config: webhook requires a url")
 		}
 		if !allowLocal {
-			if err := validateExternalURL(wh.URL); err != nil {
+			if err := ValidateExternalURL(wh.URL); err != nil {
 				return fmt.Errorf("config: webhook url: %w", err)
 			}
 		}
@@ -365,7 +403,7 @@ func validateAlertsConfig(alerts *AlertsConfig, allowLocal bool) error {
 			return fmt.Errorf("config: alerts webhook requires a url")
 		}
 		if !allowLocal {
-			if err := validateExternalURL(alerts.Notify.Webhook.URL); err != nil {
+			if err := ValidateExternalURL(alerts.Notify.Webhook.URL); err != nil {
 				return fmt.Errorf("config: alerts webhook url: %w", err)
 			}
 		}
@@ -496,7 +534,7 @@ func validateLabelSelector(selector string) error {
 }
 
 // validateExternalURL checks that a URL is valid and not targeting internal/private networks (SSRF prevention).
-func validateExternalURL(rawURL string) error {
+func ValidateExternalURL(rawURL string) error {
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return fmt.Errorf("must start with http:// or https://")
 	}

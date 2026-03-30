@@ -22,7 +22,11 @@ func (s *Server) handleListOutputs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"outputs": rows, "total": len(rows)})
+	masked := make([]*store.OutputRow, len(rows))
+	for i := range rows {
+		masked[i] = maskOutputSecrets(&rows[i])
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"outputs": masked, "total": len(masked)})
 }
 
 func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +43,7 @@ func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, row)
+	writeJSON(w, http.StatusOK, maskOutputSecrets(row))
 }
 
 func (s *Server) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
@@ -63,12 +67,18 @@ func (s *Server) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "field too long")
 		return
 	}
+	if !s.allowLocal {
+		if err := validateOutputConfigSSRF(req.Type, req.Config); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	row := outputRequestToRow(&req)
 	if err := s.store.CreateOutput(r.Context(), row); err != nil {
 		writeError(w, http.StatusConflict, "output already exists or invalid data")
 		return
 	}
-	writeJSON(w, http.StatusCreated, row)
+	writeJSON(w, http.StatusCreated, maskOutputSecrets(row))
 }
 
 func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
@@ -85,13 +95,19 @@ func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.allowLocal && req.Type != "" {
+		if err := validateOutputConfigSSRF(req.Type, req.Config); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	row := outputRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateOutput(r.Context(), row); err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, row)
+	writeJSON(w, http.StatusOK, maskOutputSecrets(row))
 }
 
 func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {

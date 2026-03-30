@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+
+	"logtailr/internal/config"
+	"logtailr/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -69,3 +73,77 @@ var validSettingKeys = map[string]bool{
 }
 
 const maxFieldLen = 1024
+
+// sensitiveKeys are JSON keys in output config that should be masked in API responses.
+var sensitiveKeys = []string{"password", "token", "secret", "api_key", "apikey"}
+
+// maskOutputSecrets returns a copy of the OutputRow with sensitive fields in Config masked.
+func maskOutputSecrets(row *store.OutputRow) *store.OutputRow {
+	if row == nil || len(row.Config) == 0 {
+		return row
+	}
+	var cfgMap map[string]any
+	if err := json.Unmarshal(row.Config, &cfgMap); err != nil {
+		return row
+	}
+
+	maskMapSecrets(cfgMap)
+
+	masked, err := json.Marshal(cfgMap)
+	if err != nil {
+		return row
+	}
+
+	cp := *row
+	cp.Config = masked
+	return &cp
+}
+
+func maskMapSecrets(m map[string]any) {
+	for k, v := range m {
+		lower := strings.ToLower(k)
+		for _, sensitive := range sensitiveKeys {
+			if strings.Contains(lower, sensitive) {
+				if s, ok := v.(string); ok && s != "" {
+					m[k] = "****"
+				}
+				break
+			}
+		}
+		if nested, ok := v.(map[string]any); ok {
+			maskMapSecrets(nested)
+		}
+	}
+}
+
+// validateOutputConfigSSRF checks that URLs inside output configs don't target internal networks.
+func validateOutputConfigSSRF(outputType string, cfgJSON json.RawMessage) error {
+	if len(cfgJSON) == 0 {
+		return nil
+	}
+
+	var cfgMap map[string]any
+	if err := json.Unmarshal(cfgJSON, &cfgMap); err != nil {
+		return nil // validation of JSON structure is handled elsewhere
+	}
+
+	switch outputType {
+	case "webhook":
+		if rawURL, ok := cfgMap["url"].(string); ok && rawURL != "" {
+			if err := config.ValidateExternalURL(rawURL); err != nil {
+				return fmt.Errorf("webhook url: %w", err)
+			}
+		}
+	case "opensearch":
+		if hosts, ok := cfgMap["hosts"].([]any); ok {
+			for _, h := range hosts {
+				if hostStr, ok := h.(string); ok {
+					if err := config.ValidateExternalURL(hostStr); err != nil {
+						return fmt.Errorf("opensearch host %q: %w", hostStr, err)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
