@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"logtailr/internal/alert"
 	"logtailr/internal/config"
 	"logtailr/internal/health"
+	"logtailr/internal/store"
 	"strings"
 	"time"
 )
@@ -67,6 +69,55 @@ func convertAlertRules(cfg *config.AlertsConfig) ([]alert.Rule, error) {
 			Level:     rc.Level,
 			Source:    rc.Source,
 			Threshold: rc.Threshold,
+			Window:    window,
+			Cooldown:  cooldown,
+		})
+	}
+
+	return rules, nil
+}
+
+func reloadAlertRulesFromDB(ctx context.Context, st *store.Store) ([]alert.Rule, error) {
+	ruleRows, err := st.ListAlertRules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load alert rules: %w", err)
+	}
+
+	defaultCooldown := 5 * time.Minute
+	if dc, err := config.LoadSettingString(ctx, st, "alerts.default_cooldown"); err == nil && dc != "" {
+		if d, err := time.ParseDuration(dc); err == nil {
+			defaultCooldown = d
+		}
+	}
+
+	rules := make([]alert.Rule, 0, len(ruleRows))
+	for _, r := range ruleRows {
+		if !r.Enabled {
+			continue
+		}
+
+		cooldown := defaultCooldown
+		if r.Cooldown != "" {
+			if d, err := time.ParseDuration(r.Cooldown); err == nil {
+				cooldown = d
+			}
+		}
+
+		var window time.Duration
+		if r.Window != "" {
+			if d, err := time.ParseDuration(r.Window); err == nil {
+				window = d
+			}
+		}
+
+		rules = append(rules, alert.Rule{
+			Name:      r.Name,
+			Type:      alert.RuleType(r.Type),
+			Severity:  alert.Severity(strings.ToLower(r.Severity)),
+			Pattern:   r.Pattern,
+			Level:     r.Level,
+			Source:    r.Source,
+			Threshold: r.Threshold,
 			Window:    window,
 			Cooldown:  cooldown,
 		})

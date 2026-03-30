@@ -108,7 +108,7 @@ func LoadFromStore(ctx context.Context, st *store.Store) (*Config, error) {
 			return nil, fmt.Errorf("load from store: alert notify: %w", err)
 		}
 		cfg.Alerts.Notify = notifyCfg
-		if dc, err := loadSettingString(ctx, st, "alerts.default_cooldown"); err == nil && dc != "" {
+		if dc, err := LoadSettingString(ctx, st, "alerts.default_cooldown"); err == nil && dc != "" {
 			cfg.Alerts.DefaultCooldown = dc
 		}
 	}
@@ -119,16 +119,16 @@ func LoadFromStore(ctx context.Context, st *store.Store) (*Config, error) {
 func loadGlobalSettings(ctx context.Context, st *store.Store) (GlobalConfig, error) {
 	var g GlobalConfig
 
-	if v, err := loadSettingString(ctx, st, "global.level"); err == nil && v != "" {
+	if v, err := LoadSettingString(ctx, st, "global.level"); err == nil && v != "" {
 		g.Level = v
 	}
-	if v, err := loadSettingString(ctx, st, "global.regex"); err == nil && v != "" {
+	if v, err := LoadSettingString(ctx, st, "global.regex"); err == nil && v != "" {
 		g.Regex = v
 	}
-	if v, err := loadSettingString(ctx, st, "global.output"); err == nil && v != "" {
+	if v, err := LoadSettingString(ctx, st, "global.output"); err == nil && v != "" {
 		g.Output = v
 	}
-	if v, err := loadSettingString(ctx, st, "global.output_path"); err == nil && v != "" {
+	if v, err := LoadSettingString(ctx, st, "global.output_path"); err == nil && v != "" {
 		g.OutputPath = v
 	}
 	if v, err := loadSettingBool(ctx, st, "global.show_health"); err == nil {
@@ -137,7 +137,7 @@ func loadGlobalSettings(ctx context.Context, st *store.Store) (GlobalConfig, err
 	if v, err := loadSettingBool(ctx, st, "global.aggregate"); err == nil {
 		g.Aggregate = v
 	}
-	if v, err := loadSettingString(ctx, st, "global.aggregate_window"); err == nil && v != "" {
+	if v, err := LoadSettingString(ctx, st, "global.aggregate_window"); err == nil && v != "" {
 		g.AggregateWindow = v
 	}
 
@@ -150,14 +150,15 @@ func loadAlertNotifySettings(ctx context.Context, st *store.Store) (AlertNotifyC
 	if v, err := loadSettingBool(ctx, st, "alerts.notify.console"); err == nil {
 		notify.Console = v
 	}
-	if url, err := loadSettingString(ctx, st, "alerts.notify.webhook.url"); err == nil && url != "" {
+	if url, err := LoadSettingString(ctx, st, "alerts.notify.webhook.url"); err == nil && url != "" {
 		notify.Webhook = &AlertWebhookConfig{URL: url}
 	}
 
 	return notify, nil
 }
 
-func loadSettingString(ctx context.Context, st *store.Store, key string) (string, error) {
+// LoadSettingString reads a JSON-encoded string setting from the store.
+func LoadSettingString(ctx context.Context, st *store.Store, key string) (string, error) {
 	raw, err := st.GetSetting(ctx, key)
 	if err != nil || raw == nil {
 		return "", err

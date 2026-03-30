@@ -214,7 +214,20 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			log.Println("Config change detected: outputs updated (restart required to apply)")
 		})
 		cw.OnChange(configwatch.ChangeAlertRules, func(_ configwatch.ChangeType) {
-			log.Println("Config change detected: alert rules updated (restart required to apply)")
+			if alertEngine == nil {
+				log.Println("Config change detected: alert rules updated (no alert engine running)")
+				return
+			}
+			rules, err := reloadAlertRulesFromDB(ctx, dbStore)
+			if err != nil {
+				log.Printf("Config change detected: alert rules updated but reload failed: %v", err)
+				return
+			}
+			if err := alertEngine.ReloadRules(rules); err != nil {
+				log.Printf("Alert rules reload failed: %v", err)
+				return
+			}
+			log.Printf("Alert rules reloaded: %d rule(s) active", len(rules))
 		})
 		cw.OnChange(configwatch.ChangeSettings, func(_ configwatch.ChangeType) {
 			log.Println("Config change detected: settings updated (restart required to apply)")

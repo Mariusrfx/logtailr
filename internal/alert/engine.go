@@ -85,7 +85,11 @@ func (e *Engine) ProcessLine(line *logline.LogLine) {
 }
 
 func (e *Engine) ProcessHealthChange(source string, oldStatus, newStatus health.Status) {
-	for _, ev := range e.evaluators {
+	e.ruleMu.RLock()
+	evals := e.evaluators
+	e.ruleMu.RUnlock()
+
+	for _, ev := range evals {
 		r := ev.rule()
 		if r.Type != RuleTypeHealthChange {
 			continue
@@ -136,11 +140,45 @@ func (e *Engine) RuleStats() map[string]*ruleState {
 }
 
 func (e *Engine) Rules() []Rule {
-	rules := make([]Rule, len(e.evaluators))
-	for i, ev := range e.evaluators {
+	e.ruleMu.RLock()
+	evals := e.evaluators
+	e.ruleMu.RUnlock()
+
+	rules := make([]Rule, len(evals))
+	for i, ev := range evals {
 		rules[i] = *ev.rule()
 	}
 	return rules
+}
+
+// ReloadRules atomically replaces the current set of evaluators with new rules.
+// Existing notifiers, rate limiter state, and recent events are preserved.
+// Fire counts and last-fired timestamps are preserved for rules that keep the same name.
+func (e *Engine) ReloadRules(rules []Rule) error {
+	evals := make([]evaluator, 0, len(rules))
+	newStats := make(map[string]*ruleState, len(rules))
+
+	for i := range rules {
+		ev, err := compileRule(&rules[i])
+		if err != nil {
+			return fmt.Errorf("alert rule %q: %w", rules[i].Name, err)
+		}
+		evals = append(evals, ev)
+		newStats[rules[i].Name] = &ruleState{}
+	}
+
+	e.ruleMu.Lock()
+	// Preserve stats for rules that still exist by name
+	for name, newSt := range newStats {
+		if old, ok := e.ruleStats[name]; ok {
+			*newSt = *old
+		}
+	}
+	e.evaluators = evals
+	e.ruleStats = newStats
+	e.ruleMu.Unlock()
+
+	return nil
 }
 
 func (e *Engine) Close() error {
@@ -160,7 +198,11 @@ func (e *Engine) processLoop() {
 	defer close(e.done)
 
 	for line := range e.processCh {
-		for _, ev := range e.evaluators {
+		e.ruleMu.RLock()
+		evals := e.evaluators
+		e.ruleMu.RUnlock()
+
+		for _, ev := range evals {
 			if event := ev.evaluate(line); event != nil {
 				e.fireEvent(ev.rule(), event)
 			}

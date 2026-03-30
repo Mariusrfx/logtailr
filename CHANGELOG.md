@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-30
+
+### Added
+- **OpenAPI spec v0.12.0**: Full documentation of all 18 CRUD endpoints under `/api/v1/` — sources, outputs, alert-rules, alert-events (with filtering and acknowledgement), saved-searches, and settings. Includes input/response schemas, validation enums, pagination parameters, and reusable `ResourceId` parameter
+- **Alert rules hot-reload**: `Engine.ReloadRules()` atomically replaces evaluators at runtime, preserving fire counts and last-fired timestamps for rules that keep the same name. Evaluator access protected with RWMutex for concurrent safety
+- **Config watcher alert reload**: When alert rules change in the database, the config watcher now reloads them into the running alert engine automatically (no restart required). Sources and outputs still require restart
+- **README: PostgreSQL mode**: New documentation section covering `--db-url` flag, `logtailr migrate` commands, `logtailr import`, CRUD API table, and hot-reload behavior
+
+### Changed
+- **`config.LoadSettingString` exported**: Renamed from `loadSettingString` to allow reuse from `cmd` package during alert rule reload
+
 ## [0.11.0] - 2026-03-12
 
 ### Changed

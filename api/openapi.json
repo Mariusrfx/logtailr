@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Logtailr API",
-    "description": "REST API for the Logtailr concurrent multi-source log aggregator. Provides health monitoring, source status, configuration inspection, Prometheus metrics, and real-time log streaming via WebSocket.",
-    "version": "0.8.0",
+    "description": "REST API for the Logtailr concurrent multi-source log aggregator. Provides health monitoring, source status, configuration inspection, Prometheus metrics, real-time log streaming via WebSocket, and full CRUD management of sources, outputs, alert rules, alert events, saved searches, and settings.",
+    "version": "0.12.0",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -45,7 +45,7 @@
             "description": "List of source health statuses",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/SourceList" }
+                "schema": { "$ref": "#/components/schemas/SourceHealthList" }
               }
             }
           }
@@ -126,15 +126,15 @@
     "/alerts": {
       "get": {
         "operationId": "getAlerts",
-        "summary": "Recent alert events",
-        "description": "Returns recent alert events fired by the alert engine, including rule name, severity, message, and timestamp.",
+        "summary": "Recent alert events (in-memory)",
+        "description": "Returns recent alert events fired by the alert engine from memory, including rule name, severity, message, and timestamp.",
         "tags": ["Alerts"],
         "responses": {
           "200": {
             "description": "List of alert events",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/AlertEventList" }
+                "schema": { "$ref": "#/components/schemas/InMemoryAlertEventList" }
               }
             }
           }
@@ -143,16 +143,16 @@
     },
     "/alerts/rules": {
       "get": {
-        "operationId": "getAlertRules",
-        "summary": "Configured alert rules",
-        "description": "Returns all configured alert rules with their fire count and last fired timestamp.",
+        "operationId": "getAlertRulesInMemory",
+        "summary": "Configured alert rules (in-memory)",
+        "description": "Returns all configured alert rules with their fire count and last fired timestamp from the running engine.",
         "tags": ["Alerts"],
         "responses": {
           "200": {
             "description": "List of alert rules",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/AlertRuleList" }
+                "schema": { "$ref": "#/components/schemas/InMemoryAlertRuleList" }
               }
             }
           }
@@ -170,7 +170,7 @@
             "name": "level",
             "in": "query",
             "required": false,
-            "description": "Minimum log level filter (debug, info, warn, error, fatal). Only logs at this level or above are sent.",
+            "description": "Minimum log level filter. Only logs at this level or above are sent.",
             "schema": {
               "type": "string",
               "enum": ["debug", "info", "warn", "error", "fatal"]
@@ -190,9 +190,1136 @@
           }
         }
       }
+    },
+    "/api/v1/sources": {
+      "get": {
+        "operationId": "listSources",
+        "summary": "List all sources",
+        "description": "Returns all configured log sources from the database.",
+        "tags": ["Sources"],
+        "responses": {
+          "200": {
+            "description": "Source list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["sources", "total"],
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Source" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSource",
+        "summary": "Create a source",
+        "description": "Creates a new log source in the database.",
+        "tags": ["Sources"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SourceInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Source created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Source" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            "description": "Source already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sources/{id}": {
+      "get": {
+        "operationId": "getSource",
+        "summary": "Get a source by ID",
+        "tags": ["Sources"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Source detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Source" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateSource",
+        "summary": "Update a source",
+        "tags": ["Sources"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SourceInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Source updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Source" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSource",
+        "summary": "Delete a source",
+        "tags": ["Sources"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "204": { "description": "Source deleted" },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outputs": {
+      "get": {
+        "operationId": "listOutputs",
+        "summary": "List all outputs",
+        "description": "Returns all configured output destinations from the database.",
+        "tags": ["Outputs"],
+        "responses": {
+          "200": {
+            "description": "Output list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["outputs", "total"],
+                  "properties": {
+                    "outputs": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Output" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createOutput",
+        "summary": "Create an output",
+        "tags": ["Outputs"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OutputInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Output created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Output" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            "description": "Output already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/outputs/{id}": {
+      "get": {
+        "operationId": "getOutput",
+        "summary": "Get an output by ID",
+        "tags": ["Outputs"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Output detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Output" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Output not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateOutput",
+        "summary": "Update an output",
+        "tags": ["Outputs"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OutputInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Output updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Output" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Output not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOutput",
+        "summary": "Delete an output",
+        "tags": ["Outputs"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "204": { "description": "Output deleted" },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Output not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert-rules": {
+      "get": {
+        "operationId": "listAlertRules",
+        "summary": "List all alert rules",
+        "description": "Returns all alert rules stored in the database.",
+        "tags": ["Alert Rules"],
+        "responses": {
+          "200": {
+            "description": "Alert rule list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["rules", "total"],
+                  "properties": {
+                    "rules": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AlertRule" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAlertRule",
+        "summary": "Create an alert rule",
+        "tags": ["Alert Rules"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AlertRuleInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Alert rule created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlertRule" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            "description": "Alert rule already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert-rules/{id}": {
+      "get": {
+        "operationId": "getAlertRule",
+        "summary": "Get an alert rule by ID",
+        "tags": ["Alert Rules"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert rule detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlertRule" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Alert rule not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAlertRule",
+        "summary": "Update an alert rule",
+        "tags": ["Alert Rules"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AlertRuleInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert rule updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlertRule" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Alert rule not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAlertRule",
+        "summary": "Delete an alert rule",
+        "tags": ["Alert Rules"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "204": { "description": "Alert rule deleted" },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Alert rule not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert-events": {
+      "get": {
+        "operationId": "listAlertEvents",
+        "summary": "List alert events",
+        "description": "Returns persisted alert events from the database with optional filters and pagination.",
+        "tags": ["Alert Events"],
+        "parameters": [
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "description": "Filter by severity",
+            "schema": {
+              "type": "string",
+              "enum": ["warning", "critical"]
+            }
+          },
+          {
+            "name": "rule_name",
+            "in": "query",
+            "required": false,
+            "description": "Filter by rule name",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "description": "Filter by source name",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Start time filter (RFC 3339)",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "End time filter (RFC 3339)",
+            "schema": { "type": "string", "format": "date-time" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum number of events to return (default 100, max 1000)",
+            "schema": { "type": "integer", "default": 100, "maximum": 1000 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Number of events to skip for pagination",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert event list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["events", "total"],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AlertEvent" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alert-events/{id}/ack": {
+      "post": {
+        "operationId": "acknowledgeAlertEvent",
+        "summary": "Acknowledge an alert event",
+        "description": "Marks an alert event as acknowledged. Idempotent — re-acknowledging an already acknowledged event is a no-op.",
+        "tags": ["Alert Events"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event acknowledged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": { "type": "string", "example": "acknowledged" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Alert event not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/saved-searches": {
+      "get": {
+        "operationId": "listSavedSearches",
+        "summary": "List all saved searches",
+        "description": "Returns all saved search definitions from the database.",
+        "tags": ["Saved Searches"],
+        "responses": {
+          "200": {
+            "description": "Saved search list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["searches", "total"],
+                  "properties": {
+                    "searches": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SavedSearch" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSavedSearch",
+        "summary": "Create a saved search",
+        "tags": ["Saved Searches"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SavedSearchInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Saved search created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SavedSearch" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/saved-searches/{id}": {
+      "get": {
+        "operationId": "getSavedSearch",
+        "summary": "Get a saved search by ID",
+        "tags": ["Saved Searches"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved search detail",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SavedSearch" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Saved search not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateSavedSearch",
+        "summary": "Update a saved search",
+        "tags": ["Saved Searches"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SavedSearchInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved search updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SavedSearch" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Saved search not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSavedSearch",
+        "summary": "Delete a saved search",
+        "tags": ["Saved Searches"],
+        "parameters": [
+          { "$ref": "#/components/parameters/ResourceId" }
+        ],
+        "responses": {
+          "204": { "description": "Saved search deleted" },
+          "400": {
+            "description": "Invalid UUID",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Saved search not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/{key}": {
+      "get": {
+        "operationId": "getSetting",
+        "summary": "Get a setting value",
+        "description": "Returns the value of a specific setting by key.",
+        "tags": ["Settings"],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Setting key",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global.level",
+                "global.regex",
+                "global.output",
+                "global.output_path",
+                "global.show_health",
+                "global.aggregate",
+                "global.aggregate_window",
+                "alerts.default_cooldown",
+                "alerts.notify.console",
+                "alerts.notify.webhook.url"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Setting value",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Setting" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid setting key",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "404": {
+            "description": "Setting not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setSetting",
+        "summary": "Set a setting value",
+        "description": "Creates or updates a setting. Uses upsert semantics.",
+        "tags": ["Settings"],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Setting key",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "global.level",
+                "global.regex",
+                "global.output",
+                "global.output_path",
+                "global.show_health",
+                "global.aggregate",
+                "global.aggregate_window",
+                "alerts.default_cooldown",
+                "alerts.notify.console",
+                "alerts.notify.webhook.url"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "description": "The setting value (any valid JSON type)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Setting saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Setting" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid key or value",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Database not available",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
+    "parameters": {
+      "ResourceId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Resource UUID",
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
     "schemas": {
       "HealthOverview": {
         "type": "object",
@@ -203,17 +1330,12 @@
             "enum": ["healthy", "degraded", "unhealthy"],
             "description": "Aggregate status: healthy (all sources OK), degraded (some degraded), unhealthy (any failed)"
           },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
+          "timestamp": { "type": "string", "format": "date-time" },
           "uptime": {
             "type": "string",
             "description": "Server uptime in Go duration format (e.g. '2h30m15s')"
           },
-          "sources": {
-            "$ref": "#/components/schemas/SourceCounts"
-          }
+          "sources": { "$ref": "#/components/schemas/SourceCounts" }
         }
       },
       "SourceCounts": {
@@ -227,7 +1349,7 @@
           "stopped": { "type": "integer" }
         }
       },
-      "SourceList": {
+      "SourceHealthList": {
         "type": "object",
         "required": ["sources"],
         "properties": {
@@ -241,32 +1363,15 @@
         "type": "object",
         "required": ["name", "status", "error_count", "last_update", "uptime"],
         "properties": {
-          "name": {
-            "type": "string",
-            "description": "Source name as defined in config"
-          },
+          "name": { "type": "string" },
           "status": {
             "type": "string",
-            "enum": ["healthy", "degraded", "failed", "stopped", "starting"],
-            "description": "Current health status"
+            "enum": ["healthy", "degraded", "failed", "stopped", "starting"]
           },
-          "error_count": {
-            "type": "integer",
-            "description": "Total errors since source started"
-          },
-          "last_error": {
-            "type": "string",
-            "description": "Most recent error message (omitted if no errors)"
-          },
-          "last_update": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Timestamp of last status change"
-          },
-          "uptime": {
-            "type": "string",
-            "description": "Time since source was registered"
-          }
+          "error_count": { "type": "integer" },
+          "last_error": { "type": "string" },
+          "last_update": { "type": "string", "format": "date-time" },
+          "uptime": { "type": "string" }
         }
       },
       "LogLine": {
@@ -274,25 +1379,16 @@
         "required": ["timestamp", "level", "message", "source"],
         "description": "A parsed log line, sent via WebSocket as JSON",
         "properties": {
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
+          "timestamp": { "type": "string", "format": "date-time" },
           "level": {
             "type": "string",
             "enum": ["debug", "info", "warn", "error", "fatal"]
           },
-          "message": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string",
-            "description": "Name of the source that produced this log"
-          },
+          "message": { "type": "string" },
+          "source": { "type": "string" },
           "fields": {
             "type": "object",
-            "additionalProperties": true,
-            "description": "Extra fields extracted from structured logs (JSON, logfmt)"
+            "additionalProperties": true
           }
         }
       },
@@ -300,37 +1396,28 @@
         "type": "object",
         "description": "Sanitized application configuration (secrets redacted)",
         "properties": {
-          "mode": {
-            "type": "string",
-            "description": "Present when running in single-file mode (no config file)"
-          },
+          "mode": { "type": "string" },
           "sources": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/SourceConfig" }
+            "items": { "$ref": "#/components/schemas/SourceConfigYAML" }
           },
           "global": { "$ref": "#/components/schemas/GlobalConfig" },
-          "outputs_opensearch": {
-            "type": "object",
-            "description": "OpenSearch output config (password redacted)"
-          },
-          "outputs_webhook": {
-            "type": "object",
-            "description": "Webhook output config (URL redacted)"
-          }
+          "outputs_opensearch": { "type": "object" },
+          "outputs_webhook": { "type": "object" }
         }
       },
-      "SourceConfig": {
+      "SourceConfigYAML": {
         "type": "object",
         "required": ["name", "type"],
         "properties": {
           "name": { "type": "string" },
           "type": {
             "type": "string",
-            "enum": ["file", "docker", "journalctl", "stdin"]
+            "enum": ["file", "docker", "journalctl", "stdin", "kubernetes"]
           },
-          "path": { "type": "string", "description": "File path (type=file)" },
-          "container": { "type": "string", "description": "Container name (type=docker)" },
-          "unit": { "type": "string", "description": "Systemd unit (type=journalctl)" },
+          "path": { "type": "string" },
+          "container": { "type": "string" },
+          "unit": { "type": "string" },
           "follow": { "type": "boolean" },
           "parser": {
             "type": "string",
@@ -348,70 +1435,47 @@
           "show_health": { "type": "boolean" }
         }
       },
-      "AlertEventList": {
+      "InMemoryAlertEventList": {
         "type": "object",
         "required": ["alerts", "total"],
         "properties": {
           "alerts": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/AlertEvent" }
+            "items": { "$ref": "#/components/schemas/InMemoryAlertEvent" }
           },
-          "total": {
-            "type": "integer",
-            "description": "Total number of alert events returned"
-          }
+          "total": { "type": "integer" }
         }
       },
-      "AlertRuleList": {
+      "InMemoryAlertEvent": {
+        "type": "object",
+        "required": ["rule", "severity", "message", "timestamp"],
+        "properties": {
+          "rule": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "message": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "source": { "type": "string" },
+          "count": { "type": "integer" }
+        }
+      },
+      "InMemoryAlertRuleList": {
         "type": "object",
         "required": ["rules"],
         "properties": {
           "rules": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/AlertRule" }
+            "items": { "$ref": "#/components/schemas/InMemoryAlertRule" }
           }
         }
       },
-      "AlertEvent": {
-        "type": "object",
-        "required": ["rule", "severity", "message", "timestamp"],
-        "description": "A fired alert event",
-        "properties": {
-          "rule": {
-            "type": "string",
-            "description": "Name of the rule that fired"
-          },
-          "severity": {
-            "type": "string",
-            "enum": ["warning", "critical"]
-          },
-          "message": {
-            "type": "string",
-            "description": "Alert message describing what triggered"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "source": {
-            "type": "string",
-            "description": "Source name (present for health_change alerts)"
-          },
-          "count": {
-            "type": "integer",
-            "description": "Error count (present for error_rate alerts)"
-          }
-        }
-      },
-      "AlertRule": {
+      "InMemoryAlertRule": {
         "type": "object",
         "required": ["name", "type", "severity", "enabled"],
-        "description": "A configured alert rule with runtime stats",
         "properties": {
-          "name": {
-            "type": "string",
-            "description": "Rule name as defined in config"
-          },
+          "name": { "type": "string" },
           "type": {
             "type": "string",
             "enum": ["pattern", "level", "error_rate", "health_change"]
@@ -420,17 +1484,203 @@
             "type": "string",
             "enum": ["warning", "critical"]
           },
-          "enabled": {
-            "type": "boolean"
+          "enabled": { "type": "boolean" },
+          "fire_count": { "type": "integer" },
+          "last_fired": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "required": ["id", "name", "type", "follow", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["file", "docker", "journalctl", "stdin", "kubernetes"]
           },
-          "fire_count": {
-            "type": "integer",
-            "description": "Number of times this rule has fired"
+          "path": { "type": "string" },
+          "container": { "type": "string" },
+          "unit": { "type": "string" },
+          "priority": { "type": "string" },
+          "output_format": { "type": "string" },
+          "namespace": { "type": "string" },
+          "pod": { "type": "string" },
+          "label_selector": { "type": "string" },
+          "kubeconfig": { "type": "string" },
+          "follow": { "type": "boolean" },
+          "parser": {
+            "type": "string",
+            "enum": ["", "json", "logfmt", "text"]
           },
-          "last_fired": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SourceInput": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["file", "docker", "journalctl", "stdin", "kubernetes"]
+          },
+          "path": { "type": "string" },
+          "container": { "type": "string" },
+          "unit": { "type": "string" },
+          "priority": { "type": "string" },
+          "output_format": { "type": "string" },
+          "namespace": { "type": "string" },
+          "pod": { "type": "string" },
+          "label_selector": { "type": "string" },
+          "kubeconfig": { "type": "string" },
+          "follow": { "type": "boolean", "default": true },
+          "parser": {
+            "type": "string",
+            "enum": ["", "json", "logfmt", "text"]
+          }
+        }
+      },
+      "Output": {
+        "type": "object",
+        "required": ["id", "name", "type", "enabled", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["opensearch", "webhook", "file"]
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Output-specific configuration (JSON object)"
+          },
+          "enabled": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OutputInput": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["opensearch", "webhook", "file"]
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Output-specific configuration (defaults to {})"
+          },
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
+      "AlertRule": {
+        "type": "object",
+        "required": ["id", "name", "type", "severity", "enabled", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["pattern", "level", "error_rate", "health_change"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "pattern": { "type": "string" },
+          "level": { "type": "string" },
+          "source": { "type": "string" },
+          "threshold": { "type": "integer" },
+          "window": { "type": "string", "description": "Duration string (e.g. '5m', '1h')" },
+          "cooldown": { "type": "string", "description": "Duration string (e.g. '10m')" },
+          "enabled": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AlertRuleInput": {
+        "type": "object",
+        "required": ["name", "type", "severity"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 1024 },
+          "type": {
+            "type": "string",
+            "enum": ["pattern", "level", "error_rate", "health_change"]
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "pattern": { "type": "string" },
+          "level": { "type": "string" },
+          "source": { "type": "string" },
+          "threshold": { "type": "integer" },
+          "window": { "type": "string" },
+          "cooldown": { "type": "string" },
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
+      "AlertEvent": {
+        "type": "object",
+        "required": ["id", "rule_name", "severity", "message", "fired_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "rule_name": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["warning", "critical"]
+          },
+          "message": { "type": "string" },
+          "source": { "type": "string" },
+          "count": { "type": "integer" },
+          "fired_at": { "type": "string", "format": "date-time" },
+          "acknowledged_at": {
             "type": "string",
             "format": "date-time",
-            "description": "Timestamp of last fire (omitted if never fired)"
+            "description": "Null if not yet acknowledged"
+          }
+        }
+      },
+      "SavedSearch": {
+        "type": "object",
+        "required": ["id", "name", "filters", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "filters": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Search filter configuration (JSON object)"
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SavedSearchInput": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "filters": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Search filter configuration (defaults to {})"
+          }
+        }
+      },
+      "Setting": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string" },
+          "value": {
+            "description": "Setting value (any valid JSON type)"
           }
         }
       },
@@ -438,10 +1688,7 @@
         "type": "object",
         "required": ["error"],
         "properties": {
-          "error": {
-            "type": "string",
-            "description": "Error message"
-          }
+          "error": { "type": "string" }
         }
       }
     }
@@ -450,7 +1697,13 @@
     { "name": "Health", "description": "Health monitoring endpoints" },
     { "name": "Config", "description": "Configuration inspection" },
     { "name": "Metrics", "description": "Prometheus metrics export" },
-    { "name": "Alerts", "description": "Alert engine events and rules" },
-    { "name": "WebSocket", "description": "Real-time log streaming" }
+    { "name": "Alerts", "description": "In-memory alert engine events and rules" },
+    { "name": "WebSocket", "description": "Real-time log streaming" },
+    { "name": "Sources", "description": "CRUD operations for log sources (requires database)" },
+    { "name": "Outputs", "description": "CRUD operations for output destinations (requires database)" },
+    { "name": "Alert Rules", "description": "CRUD operations for alert rules (requires database)" },
+    { "name": "Alert Events", "description": "Persisted alert events with filtering and acknowledgement (requires database)" },
+    { "name": "Saved Searches", "description": "CRUD operations for saved search definitions (requires database)" },
+    { "name": "Settings", "description": "Key-value settings management (requires database)" }
   ]
 }

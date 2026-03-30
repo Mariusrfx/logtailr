@@ -389,6 +389,55 @@ make clean    # Remove build artifacts
 make help     # Show all targets
 ```
 
+## PostgreSQL mode
+
+Logtailr can optionally use PostgreSQL to store configuration (sources, outputs, alert rules, settings) and alert events. This enables a CRUD API for managing configuration at runtime.
+
+### Setup
+
+```bash
+# Run migrations
+logtailr migrate up --db-url "postgres://user:pass@localhost:5432/logtailr?sslmode=disable"
+
+# Import existing YAML config into the database
+logtailr import --config-file config.yaml --db-url "postgres://..."
+
+# Start with DB-backed config
+logtailr tail --api --db-url "postgres://..."
+```
+
+The `--db-url` flag can also be set via the `LOGTAILR_DB_URL` environment variable or `database.url` in the YAML config file. When a database is available, logtailr loads configuration from it first and falls back to the YAML file if no sources are found.
+
+### CRUD API
+
+When both `--api` and `--db-url` are set, the following REST endpoints are available under `/api/v1/`:
+
+| Resource | Endpoints | Description |
+|----------|-----------|-------------|
+| Sources | `GET/POST /api/v1/sources`, `GET/PUT/DELETE /api/v1/sources/{id}` | Manage log source configurations |
+| Outputs | `GET/POST /api/v1/outputs`, `GET/PUT/DELETE /api/v1/outputs/{id}` | Manage output destinations (opensearch, webhook, file) |
+| Alert Rules | `GET/POST /api/v1/alert-rules`, `GET/PUT/DELETE /api/v1/alert-rules/{id}` | Manage alert rule definitions |
+| Alert Events | `GET /api/v1/alert-events`, `POST /api/v1/alert-events/{id}/ack` | Query and acknowledge fired alert events |
+| Saved Searches | `GET/POST /api/v1/saved-searches`, `GET/PUT/DELETE /api/v1/saved-searches/{id}` | Store reusable search filter definitions |
+| Settings | `GET/PUT /api/v1/settings/{key}` | Read and write global and alert settings |
+
+All CRUD endpoints require a database connection. Without one, they return `503 Service Unavailable`.
+
+### Hot-reload
+
+Logtailr watches the database for configuration changes every 5 seconds:
+
+- **Alert rules**: Reloaded automatically — new, updated, or removed rules take effect without restart
+- **Sources and outputs**: Detected but require a restart to apply (logged as warning)
+
+### Migration commands
+
+```bash
+logtailr migrate up        # Apply pending migrations
+logtailr migrate down      # Rollback all migrations
+logtailr migrate version   # Show current schema version
+```
+
 ## OpenAPI spec
 
 The API is documented in [api/openapi.json](api/openapi.json) (OpenAPI 3.1). Use it to generate typed clients for the frontend or other consumers.
@@ -398,23 +447,27 @@ The API is documented in [api/openapi.json](api/openapi.json) (OpenAPI 3.1). Use
 ```
 logtailr/
 ├── api/
-│   └── openapi.json        # OpenAPI 3.1 spec
+│   └── openapi.json        # OpenAPI 3.1 spec (includes CRUD endpoints)
 ├── cmd/                    # CLI commands (cobra)
 │   ├── alerts.go
 │   ├── discover.go
+│   ├── import.go
+│   ├── migrate.go
 │   ├── root.go
 │   └── tail.go
 ├── internal/
 │   ├── aggregator/         # Log deduplication with time-windowed aggregation
 │   ├── alert/              # Alert engine, rules, notifiers, rate limiting
+│   ├── api/                # REST API, CRUD handlers, Prometheus metrics, WebSocket hub
 │   ├── bookmark/           # File position bookmarks for resume
-│   ├── api/                # REST API, Prometheus metrics, WebSocket hub
-│   ├── config/             # YAML config loader + validation
+│   ├── config/             # YAML config loader, DB loader, validation
+│   ├── configwatch/        # Database config change detection with hot-reload
 │   ├── discovery/          # Auto-discovery of log sources (file, Docker, journalctl)
 │   ├── filter/             # Level and regex filtering
 │   ├── health/             # Source health monitoring
 │   ├── output/             # Console, JSON, file, OpenSearch, webhook writers
 │   ├── parser/             # JSON, logfmt, text parsers
+│   ├── store/              # PostgreSQL store, migrations, CRUD operations
 │   └── tailer/             # File, Docker, journalctl, Kubernetes, stdin tailers
 ├── pkg/logline/            # Core types (LogLine, SourceConfig)
 ├── Makefile
