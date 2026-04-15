@@ -1,637 +1,82 @@
 # Logtailr
 
-> **Status: In active development** Not yet recommended for production use.
-
-Concurrent multi-source log aggregator. Tail, parse, and filter logs from files, Docker containers, journalctl, and stdin simultaneously. Send to console, files, OpenSearch, or webhooks.
+Concurrent multi-source log aggregator with real-time web dashboard. Tail, parse, filter, and alert on logs from files, Docker, journalctl, Kubernetes, and stdin.
 
 ## Features
 
-- **Multi-source tailing** — Files, Docker containers (with auto-reconnect), journalctl units, Kubernetes pods, stdin pipes
-- **Multi-format parser** — JSON, logfmt, and plain text with auto-detection
-- **Level filtering** — Filter by severity: `debug < info < warn < error < fatal`
-- **Regex filtering** — Match log messages with regular expressions
-- **Real-time file tailing** — Follow files with fsnotify, handles log rotation
-- **Multiple outputs** — Console (colored), JSON (NDJSON), file (with size rotation, compression, and age cleanup), OpenSearch/Elasticsearch, webhooks
-- **Health monitoring** — Track source status (healthy/degraded/failed/stopped)
-- **REST API** — Health endpoints, config inspection, Prometheus metrics
-- **WebSocket streaming** — Real-time log streaming with level/source filters
-- **Prometheus metrics** — `logtailr_logs_total`, source health gauges, WebSocket client count
-- **YAML config** — Define multiple sources and outputs with a single config file
-- **Alert engine** — Rule-based alerts on patterns, log levels, error rates, and health changes with per-rule cooldown and console/webhook/email notifications
-- **Log aggregation** — Deduplicate repeated messages with configurable time window (e.g. `Connection timeout (x5 in last 3s)`)
-- **Auto-discovery** — Scan system for log sources (files, Docker containers, systemd services) and generate config
-- **Bookmarks** — Save file reading position and resume from where you left off with `--bookmark` and `--resume`
-- **Security hardened** — Input validation, SSRF prevention, command injection protection, TLS 1.2+, path traversal prevention, API token authentication, secret masking in responses
-- **Hot-reload** — Sources, outputs, and alert rules update automatically when changed in the database, no restart needed
+- **Multi-source** — Files, Docker, journalctl, Kubernetes pods, stdin (all simultaneous)
+- **Multi-format** — JSON, logfmt, plain text with auto-detection
+- **Filtering** — By severity level and regex
+- **Multiple outputs** — Console, JSON, file (with rotation), OpenSearch, webhooks
+- **Alert engine** — Pattern, level, error rate, and health change rules with cooldown
+- **Web dashboard** — Real-time log viewer (100k+ virtual scroll), sources, alerts, config management
+- **PostgreSQL mode** — DB-backed config with CRUD API and hot-reload
+- **Health monitoring** — Per-source status tracking (healthy/degraded/failed/stopped)
+- **Prometheus metrics** — Logs processed, source health, WebSocket clients
+- **Auto-discovery** — Scan system for log sources and generate config
+- **Bookmarks** — Save/resume file reading position
+- **Security** — API auth, SSRF prevention, rate limiting, secret masking
 
 ## Install
 
-### Prerequisites
-
-- Go 1.25+ (`go version`)
-- Node.js 20+ and npm (`node --version`) — only needed for the web dashboard
-
-### CLI only (no dashboard)
-
 ```bash
 git clone https://github.com/Mariusrfx/logtailr.git
 cd logtailr
-make build
+make build-all    # Frontend + Go binary (dashboard included)
+# Binary at bin/logtailr
 ```
 
-### With web dashboard
-
-```bash
-git clone https://github.com/Mariusrfx/logtailr.git
-cd logtailr
-make build-all    # Builds frontend + Go binary with embedded dashboard
-```
-
-The binary will be at `bin/logtailr`.
+Requires Go 1.25+ and Node.js 20+ (for dashboard build).
 
 ## Quick start
 
-### 1. Tail a single file (simplest)
-
 ```bash
-logtailr tail --file /var/log/app.log
-logtailr tail --file /var/log/app.log --level error
-logtailr tail --file /var/log/app.log --regex "timeout|connection refused"
-```
+# Tail a single file
+logtailr tail --file /var/log/syslog --level error
 
-### 2. Quick demo with Docker + Dashboard
-
-```bash
-# 1. Start the demo log generator container
+# Demo with dashboard (Docker + syslog)
 docker compose -f dev/docker-compose.dev.yaml up -d
-
-# 2. Run logtailr with the example config (syslog + Docker container)
 logtailr tail --config config.example.yaml --api --web
-# Open http://localhost:8080 in your browser
-```
-
-This starts a container (`logtailr-demo`) that generates realistic JSON logs with mixed levels (debug, info, warn, error, fatal) at ~1 log/second. The dashboard will show two sources: `syslog` (local system logs) and `demo-api` (Docker container).
-
-To stop the demo container:
-
-```bash
-docker compose -f dev/docker-compose.dev.yaml down
-```
-
-### 3. Full setup with PostgreSQL (persistent config + CRUD API)
-
-```bash
-# 1. Start PostgreSQL (example with Docker)
-docker run -d --name logtailr-db -p 5432:5432 \
-  -e POSTGRES_DB=logtailr -e POSTGRES_PASSWORD=secret \
-  postgres:16
-
-# 2. Run database migrations
-export LOGTAILR_DB_URL="postgres://postgres:secret@localhost:5432/logtailr?sslmode=disable"
-logtailr migrate up
-
-# 3. Import your existing YAML config into the database
-logtailr import --config-file config.yaml
-
-# 4. Start with dashboard + API + DB-backed config
-logtailr tail --api --web --db-url "$LOGTAILR_DB_URL"
 # Open http://localhost:8080
-```
 
-With PostgreSQL mode, all configuration (sources, outputs, alert rules, settings) is managed via the CRUD API and hot-reloaded automatically — no restarts needed.
-
-### 4. Pipe from stdin
-
-```bash
-cat /var/log/app.log | logtailr tail --level error
-kubectl logs -f my-pod | logtailr tail --regex "ERROR|WARN"
-docker logs -f my-container | logtailr tail --output json
-```
-
-### Multi-source with config file
-
-```yaml
-# config.yaml
-sources:
-  - name: "app-logs"
-    type: "file"
-    path: "/var/log/app/app.log"
-    follow: true
-    parser: "json"
-
-  - name: "nginx-container"
-    type: "docker"
-    container: "nginx"
-    follow: true
-
-  - name: "ssh-service"
-    type: "journalctl"
-    unit: "ssh.service"
-    follow: true
-
-global:
-  level: "info"
-  output: "console"
-  show_health: true
-```
-
-```bash
-logtailr tail --config config.yaml
-```
-
-## Source types
-
-| Type | Config field | Description |
-|------|-------------|-------------|
-| `file` | `path` | Local log file, supports follow and log rotation |
-| `docker` | `container` | Docker container logs via `docker logs`, auto-reconnects on restart |
-| `journalctl` | `unit` | Systemd journal via `journalctl -u`, supports priority filter and JSON output |
-| `kubernetes` | `pod` or `label_selector` | Kubernetes pod logs via `kubectl logs`, auto-reconnects on pod restart |
-| `stdin` | — | Read from pipe (auto-detected or via config) |
-
-### Kubernetes options
-
-```yaml
-sources:
-  # By pod name
-  - name: "k8s-api"
-    type: "kubernetes"
-    namespace: "production"
-    pod: "api-server"
-    container: "app"             # Optional: specific container in multi-container pod
-    kubeconfig: "~/.kube/config" # Optional: path to kubeconfig (default: kubectl default)
-    follow: true
-    parser: "json"
-
-  # By label selector
-  - name: "k8s-workers"
-    type: "kubernetes"
-    namespace: "production"
-    label_selector: "app=worker,version=v2"
-    follow: true
-```
-
-### Journalctl options
-
-```yaml
-sources:
-  - name: "ssh-errors"
-    type: "journalctl"
-    unit: "ssh.service"
-    priority: "err"           # Filter: emerg, alert, crit, err, warning, notice, info, debug
-    output_format: "json"     # Structured output with parsed fields (_HOSTNAME, _PID, etc.)
-    follow: true
-```
-
-## Output formats
-
-### Console (default)
-
-Colored output by severity level:
-
-```
-[2026-04-15 10:30:00] [app.log] ERROR: Connection failed to database
-[2026-04-15 10:30:01] [app.log] INFO: Retrying connection...
-```
-
-Colors: debug=dim, info=default, warn=yellow, error=red, fatal=red+bold.
-
-### JSON
-
-```bash
-logtailr tail --file app.log --output json
-```
-
-Outputs one JSON object per line (NDJSON), suitable for piping to `jq`.
-
-### File
-
-```bash
-logtailr tail --file app.log --output file --output-path errors.log
-```
-
-With rotation via config file:
-
-```yaml
-outputs:
-  file:
-    path: "/var/log/logtailr/output.log"
-    max_size: "50MB"     # Rotate when file exceeds this size
-    max_age: "168h"      # Delete rotated files older than 7 days
-    compress: true        # Gzip rotated files
-```
-
-Rotated files are named with a timestamp: `output.log.2026-03-09T10-30-00.gz`.
-
-### OpenSearch / Elasticsearch
-
-Send logs directly to OpenSearch with bulk insert, retry, and date-based indices:
-
-```yaml
-outputs:
-  opensearch:
-    enabled: true
-    hosts:
-      - "https://opensearch.example.com:9200"
-    index: "logtailr-logs-%{+YYYY.MM.dd}"
-    username: "admin"
-    password: "${OPENSEARCH_PASSWORD}"
-    bulk_size: 500
-    flush_interval: "5s"
-    max_retries: 3
-    template_name: "logtailr"           # Index template name (auto-created on startup)
-    dashboards_url: "http://localhost:5601"  # Auto-create index pattern in Dashboards
-```
-
-On startup, logtailr automatically creates an index template with proper field mappings (timestamp, level, source, message) and an index pattern in OpenSearch Dashboards if `dashboards_url` is set.
-
-### Webhook
-
-Send batched log alerts to Slack, Discord, or any HTTP endpoint:
-
-```yaml
-outputs:
-  webhook:
-    enabled: true
-    url: "https://hooks.slack.com/services/XXX"
-    min_level: "error"
-    batch_size: 10
-    batch_timeout: "30s"
-```
-
-Multiple outputs can be active simultaneously (e.g. console + OpenSearch + webhook).
-
-## Web Dashboard
-
-Logtailr includes an embedded web dashboard for real-time log monitoring. Build with `make build-all` and enable with `--web`:
-
-```bash
-logtailr tail --config config.yaml --api --web
-# Open http://localhost:8080
-```
-
-### Pages
-
-| Page | Description |
-|------|-------------|
-| **Dashboard** (`/`) | Stats cards (total logs, errors, sources healthy, uptime), source health grid, recent alerts |
-| **Logs** (`/logs`) | Real-time log viewer with virtual scroll (100k+), level/regex/source filters, detail panel, pause/resume |
-| **Sources** (`/sources`) | Source cards with status badges, filter by status, detail view with inline logs |
-| **Alerts** (`/alerts`) | Alert events with severity/rule filters, pagination, acknowledge |
-| **Config** (`/config`) | CRUD management for sources, outputs, alert rules, settings, and YAML import (requires `--db-url`) |
-
-### Features
-
-- **Light mode (default) / Dark mode** — toggle with the sun/moon icon in the header, persists in localStorage
-- **Keyboard shortcuts** — `D` Dashboard, `L` Logs, `S` Sources, `A` Alerts
-- **Responsive** — sidebar collapses to drawer on mobile
-- **WebSocket connection** — status indicator in the sidebar (green/yellow/red)
-- **Dynamic page title** — shows failed source count in the browser tab
-
-### API authentication
-
-When deploying the dashboard on a network, secure it with a token:
-
-```bash
-logtailr tail --config config.yaml --api --web --api-token "my-secret-token"
-# Or via env var:
-LOGTAILR_API_TOKEN="my-secret-token" logtailr tail --config config.yaml --api --web
-```
-
-## API & Monitoring
-
-Enable the API server with `--api`:
-
-```bash
-logtailr tail --config config.yaml --api --api-port 8080
-
-# With authentication (recommended for non-local deployments)
-logtailr tail --config config.yaml --api --api-token "my-secret-token"
-# Or via env var: LOGTAILR_API_TOKEN="my-secret-token"
-```
-
-When `--api-token` is set, all `/api/v1/*` endpoints require a `Authorization: Bearer <token>` header. Public endpoints (`/health`, `/metrics`, `/ws/logs`) remain unauthenticated. Without a token configured, the API is open (development mode).
-
-### REST endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Overall health status (healthy/degraded/unhealthy) |
-| `GET /health/sources` | All sources with status, error count, uptime |
-| `GET /health/sources/:name` | Single source detail |
-| `GET /config` | Current config (secrets redacted) |
-| `GET /alerts` | Recent alert events with severity and source |
-| `GET /alerts/rules` | Configured alert rules with fire count and last fired |
-| `GET /metrics` | Prometheus metrics |
-
-### WebSocket
-
-Stream logs in real-time:
-
-```javascript
-const ws = new WebSocket('ws://localhost:8080/ws/logs');
-ws.onmessage = (event) => {
-  const log = JSON.parse(event.data);
-  console.log(`[${log.level}] ${log.message}`);
-};
-
-// Filter by level and source
-const ws = new WebSocket('ws://localhost:8080/ws/logs?level=error&source=app.log');
-```
-
-### Alerts
-
-Define rules to trigger alerts on specific conditions. Alerts support per-rule cooldown to prevent spam and can notify via console (stderr), webhook, or email (SMTP):
-
-```yaml
-alerts:
-  enabled: true
-  default_cooldown: "5m"
-  notify:
-    console: true
-    webhook:
-      url: "https://hooks.slack.com/services/XXX"
-    email:
-      host: "smtp.example.com"
-      port: 587
-      from: "alerts@example.com"
-      to: ["oncall@example.com"]
-      username: "alerts@example.com"
-      password: "${SMTP_PASSWORD}"
-      tls: true
-  rules:
-    - name: "fatal-errors"
-      type: "level"
-      severity: "critical"
-      level: "fatal"
-      cooldown: "10m"
-
-    - name: "oom-pattern"
-      type: "pattern"
-      severity: "critical"
-      pattern: "OutOfMemory|OOM"
-
-    - name: "high-error-rate"
-      type: "error_rate"
-      severity: "warning"
-      threshold: 100
-      window: "5m"
-
-    - name: "source-down"
-      type: "health_change"
-      severity: "critical"
-```
-
-| Rule type | Description | Required fields |
-|-----------|-------------|-----------------|
-| `pattern` | Regex match on log message | `pattern` |
-| `level` | Fires when log level >= threshold | `level` |
-| `error_rate` | Fires when errors exceed count in sliding window | `threshold`, `window` |
-| `health_change` | Fires when a source changes health status | — |
-
-### Prometheus metrics
-
-```
-logtailr_logs_total{source="app.log",level="error"} 150
-logtailr_source_healthy{source="app.log",status="healthy"} 1
-logtailr_source_errors_total{source="app.log"} 2
-logtailr_alerts_total{rule="fatal-errors",severity="critical"} 3
-logtailr_active_sources 4
-logtailr_websocket_clients 2
-```
-
-## Log aggregation
-
-Reduce noise from repeated messages with `--aggregate`:
-
-```bash
-logtailr tail --config config.yaml --aggregate
-logtailr tail --config config.yaml --aggregate --aggregate-window 10s
-```
-
-Or enable in config:
-
-```yaml
-global:
-  aggregate: true
-  aggregate_window: "5s"
-```
-
-Repeated messages (same source, level, and message) within the window are collapsed:
-
-```
-[2026-04-15 10:30:00] [app.log] ERROR: Connection timeout (x5 in last 3s)
-```
-
-## Auto-discovery
-
-Scan the system for log sources:
-
-```bash
-logtailr discover                          # Scan all (files, Docker, journalctl)
-logtailr discover --scan file,docker       # Scan only files and Docker
-logtailr discover --output yaml            # Print config as YAML
-logtailr discover --save config.yaml       # Save config to file
-```
-
-Example output:
-
-```
-Found 5 potential log source(s):
-
-  TYPE         NAME                    DETAIL
-  file         syslog                  /var/log/syslog
-  file         auth                    /var/log/auth.log
-  docker       nginx                   container=nginx
-  docker       postgres                container=postgres
-  journalctl   ssh.service             unit=ssh.service
-
-Use --save config.yaml to generate configuration file.
-```
-
-## Bookmarks
-
-Save your reading position and resume later — only see new lines:
-
-```bash
-# Tail a file and save position on exit (Ctrl+C)
-logtailr tail --file /var/log/app.log --bookmark myapp
-
-# Resume from where you left off
-logtailr tail --file /var/log/app.log --resume myapp
-```
-
-Bookmarks are stored in `~/.logtailr/bookmarks.json` with the file path, byte offset, and inode. On resume, logtailr verifies the inode to detect file rotation — if the file was replaced, it warns and reads from the start.
-
-## Supported log formats
-
-### JSON
-
-```json
-{"timestamp":"2026-04-15T10:30:00Z","level":"error","message":"Connection failed"}
-```
-
-### Logfmt
-
-```
-time=2026-04-15T10:30:00Z level=error msg="Connection failed"
-```
-
-### Plain text
-
-```
-[2026-04-15 10:30:00] ERROR: Connection failed
-```
-
-All formats are auto-detected if no parser is specified.
-
-## Development
-
-### Build targets
-
-```bash
-make build        # Compile Go binary (CLI only, no dashboard)
-make build-web    # Build frontend and copy to embed dir
-make build-all    # Build frontend + Go binary (full dashboard)
-make test         # Run tests with race detector
-make vet          # Run go vet
-make lint         # Run govulncheck
-make clean        # Remove build artifacts
-make help         # Show all targets
-```
-
-### Running locally with sample data
-
-```bash
-# 1. Start the demo log generator (Docker container producing JSON logs)
-docker compose -f dev/docker-compose.dev.yaml up -d
-
-# 2. Terminal 1: Start Go backend with API
-go run . tail --config config.example.yaml --api --api-port 8080
-
-# 3. Terminal 2: Start Vite dev server (hot reload)
-cd web && npm install && npm run dev
-
-# 4. Open http://localhost:5173
-```
-
-This gives you two live sources: system `syslog` and a Docker container (`logtailr-demo`) generating mixed-level JSON logs at ~1/sec. The Vite dev server proxies API and WebSocket calls to the Go backend on port 8080.
-
-To stop:
-
-```bash
-docker compose -f dev/docker-compose.dev.yaml down
-```
-
-## PostgreSQL mode
-
-Logtailr can optionally use PostgreSQL to store configuration (sources, outputs, alert rules, settings) and alert events. This enables a CRUD API for managing configuration at runtime.
-
-### Setup
-
-```bash
-# Run migrations
-logtailr migrate up --db-url "postgres://user:pass@localhost:5432/logtailr?sslmode=disable"
-
-# Import existing YAML config into the database
-logtailr import --config-file config.yaml --db-url "postgres://..."
-
-# Start with DB-backed config + dashboard
+# With PostgreSQL (persistent config + CRUD API)
+logtailr migrate up --db-url "postgres://user:pass@localhost:5432/logtailr"
 logtailr tail --api --web --db-url "postgres://..."
-# Open http://localhost:8080
-```
-
-The `--db-url` flag can also be set via the `LOGTAILR_DB_URL` environment variable or `database.url` in the YAML config file. When a database is available, logtailr loads configuration from it first and falls back to the YAML file if no sources are found.
-
-### CRUD API
-
-When both `--api` and `--db-url` are set, the following REST endpoints are available under `/api/v1/`:
-
-| Resource | Endpoints | Description |
-|----------|-----------|-------------|
-| Sources | `GET/POST /api/v1/sources`, `GET/PUT/DELETE /api/v1/sources/{id}` | Manage log source configurations |
-| Outputs | `GET/POST /api/v1/outputs`, `GET/PUT/DELETE /api/v1/outputs/{id}` | Manage output destinations (opensearch, webhook, file) |
-| Alert Rules | `GET/POST /api/v1/alert-rules`, `GET/PUT/DELETE /api/v1/alert-rules/{id}` | Manage alert rule definitions |
-| Alert Events | `GET /api/v1/alert-events`, `POST /api/v1/alert-events/{id}/ack` | Query and acknowledge fired alert events |
-| Saved Searches | `GET/POST /api/v1/saved-searches`, `GET/PUT/DELETE /api/v1/saved-searches/{id}` | Store reusable search filter definitions |
-| Settings | `GET/PUT /api/v1/settings/{key}` | Read and write global and alert settings |
-| Import | `POST /api/v1/import/yaml` | Import a YAML config file into the database |
-
-All CRUD endpoints require a database connection. Without one, they return `503 Service Unavailable`.
-
-### Hot-reload
-
-Logtailr watches the database for configuration changes every 5 seconds:
-
-- **Alert rules**: Reloaded automatically — new, updated, or removed rules take effect without restart
-- **Sources**: Added, removed, or restarted automatically when config changes in DB
-- **Outputs**: Writer pipeline rebuilt automatically when output config changes in DB
-
-### Migration commands
-
-```bash
-logtailr migrate up        # Apply pending migrations
-logtailr migrate down      # Rollback all migrations
-logtailr migrate version   # Show current schema version
-```
-
-## OpenAPI spec
-
-The API is documented in [api/openapi.json](api/openapi.json) (OpenAPI 3.1). Use it to generate typed clients for the frontend or other consumers.
-
-## Project structure
-
-```
-logtailr/
-├── api/
-│   └── openapi.json        # OpenAPI 3.1 spec (includes CRUD endpoints)
-├── cmd/                    # CLI commands (cobra)
-│   ├── alerts.go
-│   ├── discover.go
-│   ├── import.go
-│   ├── migrate.go
-│   ├── output_manager.go   # Dynamic output writer swap for hot-reload
-│   ├── root.go
-│   ├── tail.go
-│   └── tailer_manager.go   # Dynamic tailer lifecycle for hot-reload
-├── internal/
-│   ├── aggregator/         # Log deduplication with time-windowed aggregation
-│   ├── alert/              # Alert engine, rules, notifiers, rate limiting
-│   ├── api/                # REST API, CRUD handlers, Prometheus metrics, WebSocket hub
-│   ├── bookmark/           # File position bookmarks for resume
-│   ├── config/             # YAML config loader, DB loader, validation
-│   ├── configwatch/        # Database config change detection with hot-reload
-│   ├── discovery/          # Auto-discovery of log sources (file, Docker, journalctl)
-│   ├── filter/             # Level and regex filtering
-│   ├── health/             # Source health monitoring
-│   ├── output/             # Console, JSON, file, OpenSearch, webhook writers
-│   ├── parser/             # JSON, logfmt, text parsers
-│   ├── store/              # PostgreSQL store, migrations, CRUD operations
-│   └── tailer/             # File, Docker, journalctl, Kubernetes, stdin tailers
-├── pkg/logline/            # Core types (LogLine, SourceConfig)
-├── dev/
-│   └── docker-compose.dev.yaml  # Demo log generator container
-├── config.example.yaml          # Example config (syslog + Docker demo)
-├── docs/
-│   ├── architecture.md          # Component map, data flow, concurrency model
-│   ├── configuration.md         # Full YAML reference, CLI flags, env vars
-│   └── deployment.md            # Docker, systemd, Kubernetes, Nginx guides
-├── Makefile
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-└── README.md
 ```
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/architecture.md) | Component map, data flow diagrams, interfaces, concurrency model |
-| [Configuration](docs/configuration.md) | Full YAML reference, CLI flags, environment variables, PostgreSQL mode |
-| [Deployment](docs/deployment.md) | Docker, Docker Compose, systemd, Kubernetes, Nginx reverse proxy |
-| [Contributing](CONTRIBUTING.md) | Development setup, code conventions, branching strategy |
-| [Changelog](CHANGELOG.md) | Release history |
+| [Architecture](docs/architecture.md) | Component map, data flow, interfaces, concurrency model |
+| [Configuration](docs/configuration.md) | Full YAML reference, CLI flags, environment variables |
+| [Deployment](docs/deployment.md) | Docker, systemd, Kubernetes, Nginx reverse proxy |
+| [Contributing](CONTRIBUTING.md) | Development setup, code conventions |
 | [OpenAPI Spec](api/openapi.json) | REST API specification (OpenAPI 3.1) |
+
+## Project structure
+
+```
+logtailr/
+├── cmd/                     # CLI commands (Cobra)
+├── internal/
+│   ├── api/                 # REST API, WebSocket, Prometheus metrics
+│   ├── alert/               # Alert engine, notifiers, rate limiting
+│   ├── store/               # PostgreSQL layer, migrations
+│   ├── tailer/              # File, Docker, journalctl, K8s, stdin
+│   ├── output/              # Console, file, OpenSearch, webhook writers
+│   ├── config/              # YAML + DB config loading, validation
+│   ├── configwatch/         # Hot-reload via DB polling
+│   ├── health/              # Source health monitoring
+│   ├── aggregator/          # Log deduplication
+│   ├── discovery/           # Auto-discovery scanners
+│   └── parser/              # JSON, logfmt, text parsers
+├── web/                     # React dashboard (Vite + TypeScript + Tailwind)
+├── pkg/logline/             # Core types
+├── docs/                    # Architecture, configuration, deployment guides
+├── dev/                     # Docker compose for demo
+└── api/openapi.json         # OpenAPI spec
+```
 
 ## License
 
