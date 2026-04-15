@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os"
 	"regexp"
@@ -74,7 +75,7 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 		cleanupFn:  cleanupFn,
 	}
 
-	go e.processLoop()
+	safego.Go("alert-engine", e.processLoop, nil)
 
 	return e, nil
 }
@@ -84,7 +85,7 @@ func NewEngine(rules []Rule, notifiers []Notifier) (*Engine, error) {
 // Also starts automatic cleanup of old events.
 func (e *Engine) SetEventStore(es EventStore) {
 	e.eventStore = es
-	go e.cleanupLoop()
+	safego.Go("alert-cleanup", e.cleanupLoop, nil)
 }
 
 // cleanupLoop periodically deletes alert events older than the retention period.

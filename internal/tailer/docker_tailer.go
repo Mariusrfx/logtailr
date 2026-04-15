@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os/exec"
 	"regexp"
@@ -53,7 +54,7 @@ func NewDockerTailer(container string, follow bool, healthMonitor *health.Monito
 func (dt *DockerTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, dt.cancel = context.WithCancel(ctx)
 
-	go dt.runWithReconnect(ctx, out, errChan)
+	safego.Go("tailer:docker", func() { dt.runWithReconnect(ctx, out, errChan) }, nil)
 }
 
 // Stop signals the tailer to stop.

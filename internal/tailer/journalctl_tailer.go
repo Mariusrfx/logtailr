@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os/exec"
 	"strings"
@@ -70,7 +71,7 @@ func (jt *JournalctlTailer) WithOutputFormat(format string) {
 func (jt *JournalctlTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, jt.cancel = context.WithCancel(ctx)
 
-	go jt.run(ctx, out, errChan)
+	safego.Go("tailer:journalctl", func() { jt.run(ctx, out, errChan) }, nil)
 }
 
 // Stop signals the tailer to stop.

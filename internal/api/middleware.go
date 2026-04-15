@@ -1,6 +1,7 @@
 package api
 
 import (
+	"logtailr/internal/safego"
 	"net/http"
 	"strings"
 	"sync"
@@ -119,7 +120,7 @@ func withRateLimit(next http.Handler, limit int, window time.Duration) http.Hand
 	clients := make(map[string]*entry)
 
 	// Cleanup old entries periodically
-	go func() {
+	safego.Go("rate-limit-cleanup", func() {
 		for {
 			time.Sleep(window)
 			mu.Lock()
@@ -131,7 +132,7 @@ func withRateLimit(next http.Handler, limit int, window time.Duration) http.Hand
 			}
 			mu.Unlock()
 		}
-	}()
+	}, nil)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Don't rate limit static assets or health checks

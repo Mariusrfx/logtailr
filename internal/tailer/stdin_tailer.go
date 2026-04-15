@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os"
 	"time"
@@ -33,7 +34,7 @@ func NewStdinTailer(healthMonitor *health.Monitor) *StdinTailer {
 func (st *StdinTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, st.cancel = context.WithCancel(ctx)
 
-	go st.run(ctx, out, errChan)
+	safego.Go("tailer:stdin", func() { st.run(ctx, out, errChan) }, nil)
 }
 
 func (st *StdinTailer) Stop() error {

@@ -9,6 +9,7 @@ import (
 	"logtailr/internal/alert"
 	"logtailr/internal/config"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/internal/store"
 	"logtailr/internal/web"
 	"net/http"
@@ -141,14 +142,14 @@ func NewServer(sc ServerConfig) *Server {
 func (s *Server) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelCtx = cancel
-	go s.hub.Run()
-	go s.runMetricsUpdater(ctx)
-	go func() {
+	safego.Go("ws-hub", s.hub.Run, nil)
+	safego.Go("metrics-updater", func() { s.runMetricsUpdater(ctx) }, nil)
+	safego.Go("http-server", func() {
 		log.Printf("API server listening on %s", s.httpServer.Addr)
 		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("API server error: %v", err)
 		}
-	}()
+	}, nil)
 }
 
 func (s *Server) Stop() error {

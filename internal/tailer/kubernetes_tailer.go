@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os/exec"
 	"regexp"
@@ -96,7 +97,7 @@ func NewKubernetesTailer(namespace, pod, container, labelSelector, kubeconfig st
 func (kt *KubernetesTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, kt.cancel = context.WithCancel(ctx)
 
-	go kt.runWithReconnect(ctx, out, errChan)
+	safego.Go("tailer:kubernetes", func() { kt.runWithReconnect(ctx, out, errChan) }, nil)
 }
 
 // Stop signals the tailer to stop.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"logtailr/internal/health"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"os"
 	"sync"
@@ -72,7 +73,7 @@ func (ft *FileTailer) addOffset(n int64) {
 func (ft *FileTailer) Start(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) {
 	ctx, ft.cancel = context.WithCancel(ctx)
 
-	go ft.run(ctx, out, errChan)
+	safego.Go("tailer:file", func() { ft.run(ctx, out, errChan) }, nil)
 }
 
 // Stop signals the tailer to stop and marks the source as stopped.

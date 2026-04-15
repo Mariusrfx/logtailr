@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"net/http"
 	"net/url"
@@ -57,8 +58,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.hub.Register(client)
 	s.metrics.WebSocketClients.Inc()
 
-	go s.wsWritePump(conn, client)
-	go s.wsReadPump(conn, client)
+	safego.Go("ws-write", func() { s.wsWritePump(conn, client) }, nil)
+	safego.Go("ws-read", func() { s.wsReadPump(conn, client) }, nil)
 }
 
 func (s *Server) wsWritePump(conn *websocket.Conn, client *Client) {
