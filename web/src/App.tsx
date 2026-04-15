@@ -4,17 +4,7 @@ import { Overview } from "@/components/dashboard/Overview"
 import { LogViewer } from "@/components/logs/LogViewer"
 import { SourceList } from "@/components/sources/SourceList"
 import { AlertsPage } from "@/components/alerts/AlertsPage"
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-full min-h-[400px]">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-text-primary">{title}</h2>
-        <p className="mt-2 text-text-secondary">Coming next</p>
-      </div>
-    </div>
-  )
-}
+import { ConfigPage } from "@/components/config/ConfigPage"
 
 function App() {
   return (
@@ -24,7 +14,7 @@ function App() {
         <Route path="/logs" element={<LogViewer />} />
         <Route path="/sources" element={<SourceList />} />
         <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/config" element={<Placeholder title="Config" />} />
+        <Route path="/config" element={<ConfigPage />} />
       </Route>
     </Routes>
   )

@@ -1,0 +1,23 @@
+services:
+  log-generator:
+    image: alpine:3.20
+    container_name: logtailr-demo
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          awk 'BEGIN {
+            srand()
+            r = int(rand()*100)
+            cmd = "date -u +%Y-%m-%dT%H:%M:%SZ"
+            cmd | getline ts
+            close(cmd)
+            if (r < 5) printf "{\"timestamp\":\"%s\",\"level\":\"fatal\",\"message\":\"Out of memory: killed process %d\",\"service\":\"api\"}\n", ts, r
+            else if (r < 15) printf "{\"timestamp\":\"%s\",\"level\":\"error\",\"message\":\"Connection refused to database on port 5432\",\"service\":\"api\"}\n", ts
+            else if (r < 30) printf "{\"timestamp\":\"%s\",\"level\":\"warn\",\"message\":\"Request took %dms, threshold is 1000ms\",\"service\":\"api\",\"duration_ms\":%d}\n", ts, r*30, r*30
+            else if (r < 60) printf "{\"timestamp\":\"%s\",\"level\":\"info\",\"message\":\"GET /api/v1/users 200 OK (%dms)\",\"service\":\"api\",\"method\":\"GET\",\"status\":200}\n", ts, r
+            else printf "{\"timestamp\":\"%s\",\"level\":\"debug\",\"message\":\"Cache hit for key user:%d\",\"service\":\"api\",\"cache\":\"hit\"}\n", ts, r
+          }'
+          sleep 1
+        done
+    restart: unless-stopped
