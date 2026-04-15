@@ -5,6 +5,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -20,8 +22,15 @@ type Store struct {
 	Pool *pgxpool.Pool
 }
 
+const (
+	maxRetries     = 5
+	initialBackoff = 1 * time.Second
+	maxBackoff     = 30 * time.Second
+)
+
 // New creates a new Store with a connection pool to the given PostgreSQL URL.
 // The URL should be in the format: postgres://user:pass@host:port/dbname?sslmode=disable
+// It retries connection with exponential backoff up to 5 times.
 func New(ctx context.Context, dbURL string) (*Store, error) {
 	cfg, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
@@ -36,12 +45,32 @@ func New(ctx context.Context, dbURL string) (*Store, error) {
 		return nil, fmt.Errorf("store: cannot create connection pool: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("store: cannot connect to database: %w", err)
+	backoff := initialBackoff
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := pool.Ping(ctx); err != nil {
+			lastErr = err
+			if attempt == maxRetries {
+				break
+			}
+			slog.Warn("database connection failed, retrying", "attempt", attempt, "backoff", backoff, "error", err)
+			select {
+			case <-ctx.Done():
+				pool.Close()
+				return nil, fmt.Errorf("store: connection cancelled: %w", ctx.Err())
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+		return &Store{Pool: pool}, nil
 	}
 
-	return &Store{Pool: pool}, nil
+	pool.Close()
+	return nil, fmt.Errorf("store: cannot connect to database after %d attempts: %w", maxRetries, lastErr)
 }
 
 // Close releases all database connections.
