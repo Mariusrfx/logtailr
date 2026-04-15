@@ -1,6 +1,10 @@
+import { useCallback, useMemo, useRef, useState } from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { ArrowLeft, CheckCircle, AlertTriangle, XCircle, StopCircle } from "lucide-react"
-import type { SourceHealth } from "@/types"
+import type { SourceHealth, LogLine } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { useLogs, filterLogs } from "@/hooks/useLogs"
+import { LogRow } from "@/components/logs/LogRow"
 
 interface SourceDetailProps {
   source: SourceHealth
@@ -63,15 +67,8 @@ export function SourceDetail({ source, onBack }: SourceDetailProps) {
         </div>
       )}
 
-      {/* Hint for filtered logs */}
-      <div className="bg-surface rounded-lg border border-border p-4">
-        <h3 className="text-sm font-medium text-text-secondary mb-2">Logs</h3>
-        <p className="text-sm text-text-secondary">
-          View logs for this source in the{" "}
-          <a href="/logs" className="text-accent hover:underline">Log Viewer</a>
-          {" "}with the source filter set to "{source.name}".
-        </p>
-      </div>
+      {/* Inline recent logs */}
+      <SourceLogs sourceName={source.name} />
     </div>
   )
 }
@@ -82,6 +79,97 @@ function InfoCard({ label, value, children }: { label: string; value: string; ch
       <p className="text-xs text-text-secondary mb-1">{label}</p>
       <p className="text-lg font-semibold text-text-primary">{value}</p>
       {children}
+    </div>
+  )
+}
+
+const MAX_SOURCE_LOGS = 200
+const ROW_HEIGHT = 28
+
+function SourceLogs({ sourceName }: { sourceName: string }) {
+  const { logs } = useLogs()
+  const [selectedLog, setSelectedLog] = useState<LogLine | null>(null)
+
+  const sourceFilter = useMemo(
+    () => ({ levels: new Set<string>(), regex: "", sources: new Set([sourceName]) }),
+    [sourceName]
+  )
+  const filtered = filterLogs(logs, sourceFilter).slice(-MAX_SOURCE_LOGS)
+
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  })
+
+  const handleClick = useCallback((log: LogLine) => {
+    setSelectedLog((prev) => (prev === log ? null : log))
+  }, [])
+
+  return (
+    <div className="bg-surface rounded-lg border border-border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+        <h3 className="text-sm font-medium text-text-secondary">
+          Recent Logs
+          {filtered.length > 0 && (
+            <span className="ml-2 text-xs text-text-secondary">({filtered.length})</span>
+          )}
+        </h3>
+        <a href="/logs" className="text-xs text-accent hover:underline">
+          Open full viewer
+        </a>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="p-6 text-center text-sm text-text-secondary">
+          No logs received for this source yet
+        </div>
+      ) : (
+        <>
+          <div ref={parentRef} className="overflow-auto" style={{ maxHeight: 400 }}>
+            <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+              {virtualizer.getVirtualItems().map((vRow) => {
+                const log = filtered[vRow.index]
+                return (
+                  <div
+                    key={vRow.index}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: vRow.size,
+                      transform: `translateY(${vRow.start}px)`,
+                    }}
+                  >
+                    <LogRow log={log} onClick={() => handleClick(log)} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Minimal detail for selected log */}
+          {selectedLog && (
+            <div className="border-t border-border p-4 bg-surface-hover">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-text-secondary">Log Detail</span>
+                <button
+                  onClick={() => setSelectedLog(null)}
+                  className="text-xs text-text-secondary hover:text-text-primary"
+                >
+                  Close
+                </button>
+              </div>
+              <pre className="text-xs text-text-primary font-mono whitespace-pre-wrap break-words">
+                {JSON.stringify(selectedLog, null, 2)}
+              </pre>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

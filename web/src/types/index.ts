@@ -51,3 +51,29 @@ export interface AlertRule {
   fire_count: number
   last_fired?: string
 }
+
+export interface AlertEventRow {
+  ID: string
+  RuleName: string
+  Severity: string
+  Message: string
+  Source: string
+  Count: number
+  FiredAt: string
+  AcknowledgedAt: string | null
+}
+
+export interface AlertEventsResponse {
+  events: AlertEventRow[]
+  total: number
+}
+
+export interface AlertEventFilter {
+  severity?: string
+  rule?: string
+  source?: string
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}

@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout/Layout"
 import { Overview } from "@/components/dashboard/Overview"
 import { LogViewer } from "@/components/logs/LogViewer"
 import { SourceList } from "@/components/sources/SourceList"
+import { AlertsPage } from "@/components/alerts/AlertsPage"
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="/" element={<Overview />} />
         <Route path="/logs" element={<LogViewer />} />
         <Route path="/sources" element={<SourceList />} />
+        <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/config" element={<Placeholder title="Config" />} />
       </Route>
     </Routes>

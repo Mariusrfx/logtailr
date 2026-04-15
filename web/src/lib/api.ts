@@ -23,4 +23,22 @@ export const api = {
   getHealthSources: () => request<Record<string, unknown>>("/health/sources"),
   getAlerts: () => request<Record<string, unknown>>("/alerts"),
   getAlertRules: () => request<Record<string, unknown>>("/alerts/rules"),
+
+  getAlertEvents: (params?: Record<string, string | number>) => {
+    const qs = new URLSearchParams()
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== "") qs.set(k, String(v))
+      }
+    }
+    const query = qs.toString()
+    return request<{ events: import("@/types").AlertEventRow[]; total: number }>(
+      `/api/v1/alert-events${query ? `?${query}` : ""}`
+    )
+  },
+
+  acknowledgeAlertEvent: (id: string) =>
+    request<{ status: string }>(`/api/v1/alert-events/${id}/acknowledge`, {
+      method: "POST",
+    }),
 }

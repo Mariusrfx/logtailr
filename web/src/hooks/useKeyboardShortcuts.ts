@@ -29,6 +29,9 @@ export function useKeyboardShortcuts() {
         case "s":
           navigate("/sources")
           break
+        case "a":
+          navigate("/alerts")
+          break
         case "escape":
           // Handled by individual components
           break

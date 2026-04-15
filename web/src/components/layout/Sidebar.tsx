@@ -4,6 +4,7 @@ import {
   ScrollText,
   Server,
   Settings,
+  Bell,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/logs", icon: ScrollText, label: "Logs" },
   { to: "/sources", icon: Server, label: "Sources" },
+  { to: "/alerts", icon: Bell, label: "Alerts" },
   { to: "/config", icon: Settings, label: "Config" },
 ]
 
