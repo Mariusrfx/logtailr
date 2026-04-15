@@ -2,6 +2,7 @@ ROADMAP.md
 
 # IDE
 .idea/
+.claude/
 
 # Build artifacts
 bin/
@@ -9,6 +10,10 @@ bin/
 # Local config (may contain secrets)
 config.yaml
 config.dev.yaml
+
+# Frontend
+web/node_modules/
+web/dist/
 
 # Generated frontend dist (rebuild with make build-web)
 internal/web/dist/*

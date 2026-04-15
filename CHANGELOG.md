@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-04-15
+
+### Added
+- **F7.1 Panic recovery**: `internal/safego` package wraps all goroutines with `recover()` + stack trace logging. Applied to alert engine, all tailers, WebSocket hub, API server, metrics updater, and rate limit cleanup
+- **F7.2 Structured logging**: Migrated all `log.Printf` and `fmt.Fprintf(os.Stderr)` calls to `log/slog`. New `internal/logger` package with `Setup(format, level)`. CLI flags `--log-format` (text/json) and `--log-level` (debug/info/warn/error)
+- **F7.3 DB connection retry**: `store.New()` retries with exponential backoff (5 attempts, 1s to 30s). Context-aware cancellation. Structured logging of each failed attempt
+- **Documentation**: Architecture guide (`docs/architecture.md`), configuration reference (`docs/configuration.md`), deployment guide (`docs/deployment.md`) with Docker, systemd, Kubernetes, and Nginx examples. `CONTRIBUTING.md` with development workflow
+
+## [0.14.0] - 2026-04-15
+
+### Added
+- **F6.7 Alerts page**: New `/alerts` route with paginated alert event list, severity/rule filters, and acknowledge button. Sidebar link with Bell icon. Keyboard shortcut `A`
+- **F6.7 Inline logs in source detail**: SourceDetail now shows recent logs filtered by source with virtual scroll (last 200 logs)
+- **F6.15 Config management UI**: New `/config` page with 4 tabs (Sources, Outputs, Alert Rules, Settings). Full CRUD for each entity with dynamic form fields per type. Delete confirmation modal. Import YAML modal (file upload + paste)
+- **F6.15 "Database not configured" banner**: Friendly message when accessing Config page without `--db-url`
+- **Toast notifications**: System-wide toast provider for CRUD feedback (success/error) with auto-dismiss
+- **Export logs**: Download filtered logs as JSON or CSV from the Log Viewer toolbar
+- **Loading skeletons**: Skeleton screens for dashboard stats cards, source cards, and config list items
+- **Search with Ctrl+F**: Log viewer search bar with highlight, match navigation (Enter/Shift+Enter), and match counter
+- **Command palette**: `Ctrl+K` opens quick navigation palette with search and keyboard selection
+- **Count-up animation**: Dashboard stats cards animate numbers on value change (400ms ease-out cubic)
+- **Dev environment**: `dev/docker-compose.dev.yaml` with Alpine container generating realistic JSON logs. `config.example.yaml` updated with syslog + Docker demo source
+
+### Changed
+- Vite proxy: removed `/alerts` and `/config` routes to avoid conflict with SPA routing
+- Overview dashboard: fetches alerts from `/api/v1/alert-events` with legacy fallback
+- `LogDetail`: Fixed JSON indentation in raw view, added word wrap
+
+## [0.13.0] - 2026-03-30
+
+### Added
+- **Web Dashboard**: React 19 + TypeScript + Vite + Tailwind CSS 4
+- **F6.1 Scaffold**: Project setup with path aliases, Vite proxy, shadcn/ui
+- **F6.2 Layout**: Collapsible sidebar, header with health status, dark/light toggle, responsive drawer on mobile
+- **F6.3 Dashboard**: Stats cards (total logs, errors, sources healthy, uptime), source health grid, recent alerts, real-time counters via WebSocket
+- **F6.4 Log Viewer**: Virtual scroll (100k+ logs), level/regex/source filters, detail side panel, pause/resume, auto-scroll with "Jump to latest"
+- **F6.5 Sources Panel**: Responsive grid cards with status badges, status filter, detail view with error history
+- **F6.6 Polish**: Favicon, dynamic title with failed count, keyboard shortcuts (D/L/S), focus rings, page transitions, custom scrollbar, mutable log buffer with throttled renders
+- **F6.14 Build**: `make build-web`, `make build-all`, `//go:embed` for static assets, `--web` flag
+
 ## [0.12.0] - 2026-03-30
 
 ### Added

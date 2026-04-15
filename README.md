@@ -190,8 +190,8 @@ sources:
 Colored output by severity level:
 
 ```
-[2024-01-15 10:30:00] [app.log] ERROR: Connection failed to database
-[2024-01-15 10:30:01] [app.log] INFO: Retrying connection...
+[2026-04-15 10:30:00] [app.log] ERROR: Connection failed to database
+[2026-04-15 10:30:01] [app.log] INFO: Retrying connection...
 ```
 
 Colors: debug=dim, info=default, warn=yellow, error=red, fatal=red+bold.
@@ -420,7 +420,7 @@ global:
 Repeated messages (same source, level, and message) within the window are collapsed:
 
 ```
-[2024-01-15 10:30:00] [app.log] ERROR: Connection timeout (x5 in last 3s)
+[2026-04-15 10:30:00] [app.log] ERROR: Connection timeout (x5 in last 3s)
 ```
 
 ## Auto-discovery
@@ -468,19 +468,19 @@ Bookmarks are stored in `~/.logtailr/bookmarks.json` with the file path, byte of
 ### JSON
 
 ```json
-{"timestamp":"2024-01-15T10:30:00Z","level":"error","message":"Connection failed"}
+{"timestamp":"2026-04-15T10:30:00Z","level":"error","message":"Connection failed"}
 ```
 
 ### Logfmt
 
 ```
-time=2024-01-15T10:30:00Z level=error msg="Connection failed"
+time=2026-04-15T10:30:00Z level=error msg="Connection failed"
 ```
 
 ### Plain text
 
 ```
-[2024-01-15 10:30:00] ERROR: Connection failed
+[2026-04-15 10:30:00] ERROR: Connection failed
 ```
 
 All formats are auto-detected if no parser is specified.
@@ -612,9 +612,26 @@ logtailr/
 ├── dev/
 │   └── docker-compose.dev.yaml  # Demo log generator container
 ├── config.example.yaml          # Example config (syslog + Docker demo)
+├── docs/
+│   ├── architecture.md          # Component map, data flow, concurrency model
+│   ├── configuration.md         # Full YAML reference, CLI flags, env vars
+│   └── deployment.md            # Docker, systemd, Kubernetes, Nginx guides
 ├── Makefile
+├── CONTRIBUTING.md
+├── CHANGELOG.md
 └── README.md
 ```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | Component map, data flow diagrams, interfaces, concurrency model |
+| [Configuration](docs/configuration.md) | Full YAML reference, CLI flags, environment variables, PostgreSQL mode |
+| [Deployment](docs/deployment.md) | Docker, Docker Compose, systemd, Kubernetes, Nginx reverse proxy |
+| [Contributing](CONTRIBUTING.md) | Development setup, code conventions, branching strategy |
+| [Changelog](CHANGELOG.md) | Release history |
+| [OpenAPI Spec](api/openapi.json) | REST API specification (OpenAPI 3.1) |
 
 ## License
 
