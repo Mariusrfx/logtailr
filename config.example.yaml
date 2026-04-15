@@ -1,0 +1,36 @@
+sources:
+  - name: "syslog"
+    type: "file"
+    path: "/var/log/syslog"
+    follow: true
+    parser: "text"
+
+  - name: "demo-api"
+    type: "docker"
+    container: "logtailr-demo"
+    follow: true
+    parser: "json"
+
+global:
+  level: "debug"
+  regex: ""
+  output: "console"
+  show_health: true
+
+alerts:
+  enabled: true
+  default_cooldown: "1m"
+  notify:
+    console: true
+  rules:
+    - name: "errors"
+      type: "level"
+      severity: "warning"
+      level: "error"
+      cooldown: "1m"
+
+    - name: "oom-detect"
+      type: "pattern"
+      severity: "critical"
+      pattern: "Out of memory|OOM"
+      cooldown: "2m"

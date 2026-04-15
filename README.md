@@ -59,12 +59,23 @@ logtailr tail --file /var/log/app.log --level error
 logtailr tail --file /var/log/app.log --regex "timeout|connection refused"
 ```
 
-### 2. Multi-source with API + Dashboard
+### 2. Quick demo with Docker + Dashboard
 
 ```bash
-# Create a config file (see config.example.yaml)
-logtailr tail --config config.yaml --api --web
+# 1. Start the demo log generator container
+docker compose -f dev/docker-compose.dev.yaml up -d
+
+# 2. Run logtailr with the example config (syslog + Docker container)
+logtailr tail --config config.example.yaml --api --web
 # Open http://localhost:8080 in your browser
+```
+
+This starts a container (`logtailr-demo`) that generates realistic JSON logs with mixed levels (debug, info, warn, error, fatal) at ~1 log/second. The dashboard will show two sources: `syslog` (local system logs) and `demo-api` (Docker container).
+
+To stop the demo container:
+
+```bash
+docker compose -f dev/docker-compose.dev.yaml down
 ```
 
 ### 3. Full setup with PostgreSQL (persistent config + CRUD API)
@@ -90,14 +101,6 @@ logtailr tail --api --web --db-url "$LOGTAILR_DB_URL"
 With PostgreSQL mode, all configuration (sources, outputs, alert rules, settings) is managed via the CRUD API and hot-reloaded automatically — no restarts needed.
 
 ### 4. Pipe from stdin
-
-```bash
-cat /var/log/app.log | logtailr tail --level error
-kubectl logs -f my-pod | logtailr tail --regex "ERROR|WARN"
-docker logs -f my-container | logtailr tail --output json
-```
-
-### Pipe from stdin
 
 ```bash
 cat /var/log/app.log | logtailr tail --level error
@@ -273,13 +276,14 @@ logtailr tail --config config.yaml --api --web
 |------|-------------|
 | **Dashboard** (`/`) | Stats cards (total logs, errors, sources healthy, uptime), source health grid, recent alerts |
 | **Logs** (`/logs`) | Real-time log viewer with virtual scroll (100k+), level/regex/source filters, detail panel, pause/resume |
-| **Sources** (`/sources`) | Source cards with status badges, filter by status, detail view with error history |
-| **Config** (`/config`) | Configuration management (coming soon) |
+| **Sources** (`/sources`) | Source cards with status badges, filter by status, detail view with inline logs |
+| **Alerts** (`/alerts`) | Alert events with severity/rule filters, pagination, acknowledge |
+| **Config** (`/config`) | CRUD management for sources, outputs, alert rules, settings, and YAML import (requires `--db-url`) |
 
 ### Features
 
 - **Light mode (default) / Dark mode** — toggle with the sun/moon icon in the header, persists in localStorage
-- **Keyboard shortcuts** — `D` Dashboard, `L` Logs, `S` Sources
+- **Keyboard shortcuts** — `D` Dashboard, `L` Logs, `S` Sources, `A` Alerts
 - **Responsive** — sidebar collapses to drawer on mobile
 - **WebSocket connection** — status indicator in the sidebar (green/yellow/red)
 - **Dynamic page title** — shows failed source count in the browser tab
@@ -483,6 +487,8 @@ All formats are auto-detected if no parser is specified.
 
 ## Development
 
+### Build targets
+
 ```bash
 make build        # Compile Go binary (CLI only, no dashboard)
 make build-web    # Build frontend and copy to embed dir
@@ -494,15 +500,27 @@ make clean        # Remove build artifacts
 make help         # Show all targets
 ```
 
-### Frontend development (hot reload)
+### Running locally with sample data
 
 ```bash
-# Terminal 1: Start Go backend
-logtailr tail --config config.yaml --api --api-addr 0.0.0.0
+# 1. Start the demo log generator (Docker container producing JSON logs)
+docker compose -f dev/docker-compose.dev.yaml up -d
 
-# Terminal 2: Start Vite dev server with proxy to Go API
-cd web && npm run dev
-# Open http://localhost:5173 (Vite proxies /api, /health, /ws to localhost:8080)
+# 2. Terminal 1: Start Go backend with API
+go run . tail --config config.example.yaml --api --api-port 8080
+
+# 3. Terminal 2: Start Vite dev server (hot reload)
+cd web && npm install && npm run dev
+
+# 4. Open http://localhost:5173
+```
+
+This gives you two live sources: system `syslog` and a Docker container (`logtailr-demo`) generating mixed-level JSON logs at ~1/sec. The Vite dev server proxies API and WebSocket calls to the Go backend on port 8080.
+
+To stop:
+
+```bash
+docker compose -f dev/docker-compose.dev.yaml down
 ```
 
 ## PostgreSQL mode
@@ -591,8 +609,11 @@ logtailr/
 │   ├── store/              # PostgreSQL store, migrations, CRUD operations
 │   └── tailer/             # File, Docker, journalctl, Kubernetes, stdin tailers
 ├── pkg/logline/            # Core types (LogLine, SourceConfig)
+├── dev/
+│   └── docker-compose.dev.yaml  # Demo log generator container
+├── config.example.yaml          # Example config (syslog + Docker demo)
 ├── Makefile
-└── config.yaml             # Example config
+└── README.md
 ```
 
 ## License
