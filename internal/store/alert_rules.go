@@ -27,7 +27,7 @@ type AlertRuleRow struct {
 }
 
 func (s *Store) ListAlertRules(ctx context.Context) ([]AlertRuleRow, error) {
-	rows, err := s.Pool.Query(ctx,
+	rows, err := s.q().Query(ctx,
 		`SELECT id, name, type, severity, pattern, level, source, threshold,
 		        window, cooldown, enabled, created_at, updated_at
 		 FROM alert_rules ORDER BY name`)
@@ -40,7 +40,7 @@ func (s *Store) ListAlertRules(ctx context.Context) ([]AlertRuleRow, error) {
 }
 
 func (s *Store) GetAlertRuleByID(ctx context.Context, id pgtype.UUID) (*AlertRuleRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT id, name, type, severity, pattern, level, source, threshold,
 		        window, cooldown, enabled, created_at, updated_at
 		 FROM alert_rules WHERE id = $1`, id)
@@ -53,7 +53,7 @@ func (s *Store) GetAlertRuleByID(ctx context.Context, id pgtype.UUID) (*AlertRul
 }
 
 func (s *Store) CreateAlertRule(ctx context.Context, r *AlertRuleRow) error {
-	err := s.Pool.QueryRow(ctx,
+	err := s.q().QueryRow(ctx,
 		`INSERT INTO alert_rules (name, type, severity, pattern, level, source, threshold,
 		                          window, cooldown, enabled)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -68,7 +68,7 @@ func (s *Store) CreateAlertRule(ctx context.Context, r *AlertRuleRow) error {
 }
 
 func (s *Store) UpdateAlertRule(ctx context.Context, r *AlertRuleRow) error {
-	ct, err := s.Pool.Exec(ctx,
+	ct, err := s.q().Exec(ctx,
 		`UPDATE alert_rules SET name=$2, type=$3, severity=$4, pattern=$5, level=$6,
 		        source=$7, threshold=$8, window=$9, cooldown=$10, enabled=$11
 		 WHERE id = $1`,
@@ -84,7 +84,7 @@ func (s *Store) UpdateAlertRule(ctx context.Context, r *AlertRuleRow) error {
 }
 
 func (s *Store) DeleteAlertRule(ctx context.Context, id pgtype.UUID) error {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM alert_rules WHERE id = $1`, id)
+	ct, err := s.q().Exec(ctx, `DELETE FROM alert_rules WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete alert rule: %w", err)
 	}

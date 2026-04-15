@@ -30,7 +30,7 @@ type SourceRow struct {
 }
 
 func (s *Store) ListSources(ctx context.Context) ([]SourceRow, error) {
-	rows, err := s.Pool.Query(ctx,
+	rows, err := s.q().Query(ctx,
 		`SELECT id, name, type, path, container, unit, priority, output_format,
 		        namespace, pod, label_selector, kubeconfig, follow, parser,
 		        created_at, updated_at
@@ -44,7 +44,7 @@ func (s *Store) ListSources(ctx context.Context) ([]SourceRow, error) {
 }
 
 func (s *Store) GetSourceByID(ctx context.Context, id pgtype.UUID) (*SourceRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT id, name, type, path, container, unit, priority, output_format,
 		        namespace, pod, label_selector, kubeconfig, follow, parser,
 		        created_at, updated_at
@@ -58,7 +58,7 @@ func (s *Store) GetSourceByID(ctx context.Context, id pgtype.UUID) (*SourceRow, 
 }
 
 func (s *Store) GetSourceByName(ctx context.Context, name string) (*SourceRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT id, name, type, path, container, unit, priority, output_format,
 		        namespace, pod, label_selector, kubeconfig, follow, parser,
 		        created_at, updated_at
@@ -72,7 +72,7 @@ func (s *Store) GetSourceByName(ctx context.Context, name string) (*SourceRow, e
 }
 
 func (s *Store) CreateSource(ctx context.Context, src *SourceRow) error {
-	err := s.Pool.QueryRow(ctx,
+	err := s.q().QueryRow(ctx,
 		`INSERT INTO sources (name, type, path, container, unit, priority, output_format,
 		                      namespace, pod, label_selector, kubeconfig, follow, parser)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
@@ -87,7 +87,7 @@ func (s *Store) CreateSource(ctx context.Context, src *SourceRow) error {
 }
 
 func (s *Store) UpdateSource(ctx context.Context, src *SourceRow) error {
-	ct, err := s.Pool.Exec(ctx,
+	ct, err := s.q().Exec(ctx,
 		`UPDATE sources SET name=$2, type=$3, path=$4, container=$5, unit=$6, priority=$7,
 		        output_format=$8, namespace=$9, pod=$10, label_selector=$11, kubeconfig=$12,
 		        follow=$13, parser=$14
@@ -105,7 +105,7 @@ func (s *Store) UpdateSource(ctx context.Context, src *SourceRow) error {
 }
 
 func (s *Store) DeleteSource(ctx context.Context, id pgtype.UUID) error {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM sources WHERE id = $1`, id)
+	ct, err := s.q().Exec(ctx, `DELETE FROM sources WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete source: %w", err)
 	}

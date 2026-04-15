@@ -184,7 +184,14 @@ func loadSettingBool(ctx context.Context, st *store.Store, key string) (bool, er
 
 // ImportToStore imports a YAML-loaded Config into the database store.
 // Uses upsert semantics (ON CONFLICT ... DO UPDATE) for idempotent re-imports.
+// All operations run inside a single transaction — if any step fails, everything is rolled back.
 func ImportToStore(ctx context.Context, st *store.Store, cfg *Config) error {
+	return st.WithTx(ctx, func(tx *store.Store) error {
+		return importToStoreInner(ctx, tx, cfg)
+	})
+}
+
+func importToStoreInner(ctx context.Context, st *store.Store, cfg *Config) error {
 	// Import sources
 	for _, src := range cfg.Sources {
 		row := &store.SourceRow{

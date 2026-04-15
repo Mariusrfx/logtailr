@@ -78,7 +78,7 @@ func (s *Store) ListAlertEvents(ctx context.Context, f AlertEventFilter) ([]Aler
 	query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argN, argN+1)
 	args = append(args, limit, f.Offset)
 
-	rows, err := s.Pool.Query(ctx, query, args...)
+	rows, err := s.q().Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list alert events: %w", err)
 	}
@@ -88,7 +88,7 @@ func (s *Store) ListAlertEvents(ctx context.Context, f AlertEventFilter) ([]Aler
 }
 
 func (s *Store) CreateAlertEvent(ctx context.Context, e *AlertEventRow) error {
-	err := s.Pool.QueryRow(ctx,
+	err := s.q().QueryRow(ctx,
 		`INSERT INTO alert_events (rule_name, severity, message, source, count, fired_at)
 		 VALUES ($1,$2,$3,$4,$5,$6)
 		 RETURNING id`,
@@ -101,7 +101,7 @@ func (s *Store) CreateAlertEvent(ctx context.Context, e *AlertEventRow) error {
 }
 
 func (s *Store) AcknowledgeAlertEvent(ctx context.Context, id pgtype.UUID) error {
-	ct, err := s.Pool.Exec(ctx,
+	ct, err := s.q().Exec(ctx,
 		`UPDATE alert_events SET acknowledged_at = now() WHERE id = $1 AND acknowledged_at IS NULL`,
 		id)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *Store) AcknowledgeAlertEvent(ctx context.Context, id pgtype.UUID) error
 }
 
 func (s *Store) DeleteAlertEventsOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM alert_events WHERE fired_at < $1`, before)
+	ct, err := s.q().Exec(ctx, `DELETE FROM alert_events WHERE fired_at < $1`, before)
 	if err != nil {
 		return 0, fmt.Errorf("store: delete old alert events: %w", err)
 	}

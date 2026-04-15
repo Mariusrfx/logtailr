@@ -19,7 +19,7 @@ type BookmarkRow struct {
 }
 
 func (s *Store) LoadBookmark(ctx context.Context, name string) (*BookmarkRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT name, file, "offset", inode, saved_at FROM bookmarks WHERE name = $1`, name)
 
 	var bm BookmarkRow
@@ -33,7 +33,7 @@ func (s *Store) LoadBookmark(ctx context.Context, name string) (*BookmarkRow, er
 }
 
 func (s *Store) SaveBookmark(ctx context.Context, bm *BookmarkRow) error {
-	_, err := s.Pool.Exec(ctx,
+	_, err := s.q().Exec(ctx,
 		`INSERT INTO bookmarks (name, file, "offset", inode, saved_at)
 		 VALUES ($1,$2,$3,$4,$5)
 		 ON CONFLICT (name) DO UPDATE SET file=EXCLUDED.file, "offset"=EXCLUDED."offset",
@@ -46,7 +46,7 @@ func (s *Store) SaveBookmark(ctx context.Context, bm *BookmarkRow) error {
 }
 
 func (s *Store) ListBookmarks(ctx context.Context) ([]BookmarkRow, error) {
-	rows, err := s.Pool.Query(ctx,
+	rows, err := s.q().Query(ctx,
 		`SELECT name, file, "offset", inode, saved_at FROM bookmarks ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list bookmarks: %w", err)
@@ -57,7 +57,7 @@ func (s *Store) ListBookmarks(ctx context.Context) ([]BookmarkRow, error) {
 }
 
 func (s *Store) DeleteBookmark(ctx context.Context, name string) error {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM bookmarks WHERE name = $1`, name)
+	ct, err := s.q().Exec(ctx, `DELETE FROM bookmarks WHERE name = $1`, name)
 	if err != nil {
 		return fmt.Errorf("store: delete bookmark %q: %w", name, err)
 	}

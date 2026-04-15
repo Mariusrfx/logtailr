@@ -11,15 +11,33 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// Querier abstracts pgxpool.Pool and pgx.Tx so store methods work in both contexts.
+type Querier interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // Store holds the database connection pool and provides access to all sub-stores.
 type Store struct {
 	Pool *pgxpool.Pool
+	tx   pgx.Tx // non-nil inside WithTx
+}
+
+// q returns the active querier: the transaction if inside WithTx, or the pool.
+func (s *Store) q() Querier {
+	if s.tx != nil {
+		return s.tx
+	}
+	return s.Pool
 }
 
 const (
@@ -76,6 +94,34 @@ func New(ctx context.Context, dbURL string) (*Store, error) {
 // Close releases all database connections.
 func (s *Store) Close() {
 	s.Pool.Close()
+}
+
+// WithTx executes fn inside a database transaction. If fn returns an error
+// or panics, the transaction is rolled back. Otherwise it is committed.
+func (s *Store) WithTx(ctx context.Context, fn func(tx *Store) error) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: begin transaction: %w", err)
+	}
+
+	txStore := &Store{Pool: s.Pool, tx: tx}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback(ctx)
+			panic(p)
+		}
+	}()
+
+	if err := fn(txStore); err != nil {
+		_ = tx.Rollback(ctx)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: commit transaction: %w", err)
+	}
+	return nil
 }
 
 // RunMigrations applies all pending up migrations.

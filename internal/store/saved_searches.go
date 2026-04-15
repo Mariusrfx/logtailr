@@ -19,7 +19,7 @@ type SavedSearchRow struct {
 }
 
 func (s *Store) ListSavedSearches(ctx context.Context) ([]SavedSearchRow, error) {
-	rows, err := s.Pool.Query(ctx,
+	rows, err := s.q().Query(ctx,
 		`SELECT id, name, filters, created_at, updated_at
 		 FROM saved_searches ORDER BY name`)
 	if err != nil {
@@ -31,7 +31,7 @@ func (s *Store) ListSavedSearches(ctx context.Context) ([]SavedSearchRow, error)
 }
 
 func (s *Store) GetSavedSearchByID(ctx context.Context, id pgtype.UUID) (*SavedSearchRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT id, name, filters, created_at, updated_at
 		 FROM saved_searches WHERE id = $1`, id)
 
@@ -43,7 +43,7 @@ func (s *Store) GetSavedSearchByID(ctx context.Context, id pgtype.UUID) (*SavedS
 }
 
 func (s *Store) CreateSavedSearch(ctx context.Context, ss *SavedSearchRow) error {
-	err := s.Pool.QueryRow(ctx,
+	err := s.q().QueryRow(ctx,
 		`INSERT INTO saved_searches (name, filters)
 		 VALUES ($1, $2)
 		 RETURNING id, created_at, updated_at`,
@@ -56,7 +56,7 @@ func (s *Store) CreateSavedSearch(ctx context.Context, ss *SavedSearchRow) error
 }
 
 func (s *Store) UpdateSavedSearch(ctx context.Context, ss *SavedSearchRow) error {
-	ct, err := s.Pool.Exec(ctx,
+	ct, err := s.q().Exec(ctx,
 		`UPDATE saved_searches SET name=$2, filters=$3
 		 WHERE id = $1`,
 		ss.ID, ss.Name, ss.Filters)
@@ -70,7 +70,7 @@ func (s *Store) UpdateSavedSearch(ctx context.Context, ss *SavedSearchRow) error
 }
 
 func (s *Store) DeleteSavedSearch(ctx context.Context, id pgtype.UUID) error {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM saved_searches WHERE id = $1`, id)
+	ct, err := s.q().Exec(ctx, `DELETE FROM saved_searches WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete saved search: %w", err)
 	}

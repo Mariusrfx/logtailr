@@ -21,7 +21,7 @@ type OutputRow struct {
 }
 
 func (s *Store) ListOutputs(ctx context.Context) ([]OutputRow, error) {
-	rows, err := s.Pool.Query(ctx,
+	rows, err := s.q().Query(ctx,
 		`SELECT id, name, type, config, enabled, created_at, updated_at
 		 FROM outputs ORDER BY name`)
 	if err != nil {
@@ -33,7 +33,7 @@ func (s *Store) ListOutputs(ctx context.Context) ([]OutputRow, error) {
 }
 
 func (s *Store) GetOutputByID(ctx context.Context, id pgtype.UUID) (*OutputRow, error) {
-	row := s.Pool.QueryRow(ctx,
+	row := s.q().QueryRow(ctx,
 		`SELECT id, name, type, config, enabled, created_at, updated_at
 		 FROM outputs WHERE id = $1`, id)
 
@@ -45,7 +45,7 @@ func (s *Store) GetOutputByID(ctx context.Context, id pgtype.UUID) (*OutputRow, 
 }
 
 func (s *Store) CreateOutput(ctx context.Context, out *OutputRow) error {
-	err := s.Pool.QueryRow(ctx,
+	err := s.q().QueryRow(ctx,
 		`INSERT INTO outputs (name, type, config, enabled)
 		 VALUES ($1,$2,$3,$4)
 		 RETURNING id, created_at, updated_at`,
@@ -58,7 +58,7 @@ func (s *Store) CreateOutput(ctx context.Context, out *OutputRow) error {
 }
 
 func (s *Store) UpdateOutput(ctx context.Context, out *OutputRow) error {
-	ct, err := s.Pool.Exec(ctx,
+	ct, err := s.q().Exec(ctx,
 		`UPDATE outputs SET name=$2, type=$3, config=$4, enabled=$5
 		 WHERE id = $1`,
 		out.ID, out.Name, out.Type, out.Config, out.Enabled)
@@ -72,7 +72,7 @@ func (s *Store) UpdateOutput(ctx context.Context, out *OutputRow) error {
 }
 
 func (s *Store) DeleteOutput(ctx context.Context, id pgtype.UUID) error {
-	ct, err := s.Pool.Exec(ctx, `DELETE FROM outputs WHERE id = $1`, id)
+	ct, err := s.q().Exec(ctx, `DELETE FROM outputs WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("store: delete output: %w", err)
 	}
