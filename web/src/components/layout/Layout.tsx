@@ -9,6 +9,7 @@ import { useDynamicTitle } from "@/hooks/useDynamicTitle"
 import { WsProvider, useWsStatus } from "@/hooks/useWebSocketContext"
 import { ToastProvider } from "@/hooks/useToast"
 import { CommandPalette } from "./CommandPalette"
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary"
 import { cn } from "@/lib/utils"
 
 function LayoutInner() {
@@ -62,7 +63,9 @@ function LayoutInner() {
         />
         <main className="flex-1 overflow-hidden relative">
           <div className="h-full overflow-auto p-4 md:p-6 has-[.log-viewer]:p-0 has-[.log-viewer]:overflow-hidden">
-            <Outlet />
+            <ErrorBoundary section="page">
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
         <CommandPalette />
@@ -73,10 +76,12 @@ function LayoutInner() {
 
 export function Layout() {
   return (
-    <WsProvider>
-      <ToastProvider>
-        <LayoutInner />
-      </ToastProvider>
-    </WsProvider>
+    <ErrorBoundary section="app">
+      <WsProvider>
+        <ToastProvider>
+          <LayoutInner />
+        </ToastProvider>
+      </WsProvider>
+    </ErrorBoundary>
   )
 }
