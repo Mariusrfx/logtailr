@@ -7,6 +7,7 @@ import { useHealth } from "@/hooks/useHealth"
 import { useWsSubscribe } from "@/hooks/useWebSocketContext"
 import { api } from "@/lib/api"
 import type { AlertEvent, SourceHealth } from "@/types"
+import { StatsCardSkeleton, SourceCardSkeleton } from "@/components/ui/Skeleton"
 
 export function Overview() {
   const { health } = useHealth(3000)
@@ -78,6 +79,24 @@ export function Overview() {
   useWsSubscribe(handleLine)
 
   const errorCount = sources.reduce((sum, s) => sum + s.error_count, 0)
+
+  const loading = !health && sources.length === 0
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => <StatsCardSkeleton key={i} />)}
+        </div>
+        <div>
+          <div className="h-4 w-24 bg-surface-hover rounded animate-pulse mb-3" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => <SourceCardSkeleton key={i} />)}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

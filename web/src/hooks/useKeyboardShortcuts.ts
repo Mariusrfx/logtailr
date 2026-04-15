@@ -10,11 +10,8 @@ export function useKeyboardShortcuts() {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
 
-      // Ctrl+K / Cmd+K — not implemented yet, prevent default
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault()
-        return
-      }
+      // Ctrl+K / Cmd+K — handled by CommandPalette
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") return
 
       // Single key shortcuts (no modifiers)
       if (e.metaKey || e.ctrlKey || e.altKey) return

@@ -4,6 +4,8 @@ import { api } from "@/lib/api"
 import type { AlertRuleRow, AlertRuleRequest } from "@/types"
 import { cn } from "@/lib/utils"
 import { DeleteConfirmModal } from "./DeleteConfirmModal"
+import { useToast } from "@/hooks/useToast"
+import { ListItemSkeleton } from "@/components/ui/Skeleton"
 import { NoDatabaseBanner, isNoDatabaseError } from "./NoDatabaseBanner"
 
 const RULE_TYPES = ["pattern", "level", "error_rate", "health_change"] as const
@@ -30,6 +32,7 @@ export function AlertRulesTab({ refreshKey }: AlertRulesTabProps) {
   const [deleting, setDeleting] = useState<AlertRuleRow | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const fetchRules = useCallback(async () => {
     setLoading(true)
@@ -58,6 +61,7 @@ export function AlertRulesTab({ refreshKey }: AlertRulesTabProps) {
       } else {
         await api.createAlertRule(data)
       }
+      toast("success", editing.id ? "Alert rule updated" : "Alert rule created")
       setEditing(null)
       fetchRules()
     } catch (err) {
@@ -71,9 +75,11 @@ export function AlertRulesTab({ refreshKey }: AlertRulesTabProps) {
     if (!deleting) return
     try {
       await api.deleteAlertRule(deleting.ID)
+      toast("success", `Alert rule "${deleting.Name}" deleted`)
       setDeleting(null)
       fetchRules()
     } catch {
+      toast("error", "Failed to delete alert rule")
       setDeleting(null)
     }
   }
@@ -103,7 +109,11 @@ export function AlertRulesTab({ refreshKey }: AlertRulesTabProps) {
   }
 
   if (loading && rules.length === 0) {
-    return <div className="p-6 text-center text-text-secondary text-sm">Loading alert rules...</div>
+    return (
+      <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+        {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} />)}
+      </div>
+    )
   }
 
   if (error && rules.length === 0) {

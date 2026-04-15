@@ -5,6 +5,8 @@ import type { SourceRow, SourceRequest } from "@/types"
 import { cn } from "@/lib/utils"
 import { DeleteConfirmModal } from "./DeleteConfirmModal"
 import { NoDatabaseBanner, isNoDatabaseError } from "./NoDatabaseBanner"
+import { useToast } from "@/hooks/useToast"
+import { ListItemSkeleton } from "@/components/ui/Skeleton"
 
 const SOURCE_TYPES = ["file", "docker", "journalctl", "stdin", "kubernetes"] as const
 const PARSERS = ["", "json", "logfmt", "text"] as const
@@ -31,6 +33,7 @@ export function SourcesTab({ refreshKey }: SourcesTabProps) {
   const [deleting, setDeleting] = useState<SourceRow | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const fetchSources = useCallback(async () => {
     setLoading(true)
@@ -57,6 +60,7 @@ export function SourcesTab({ refreshKey }: SourcesTabProps) {
       } else {
         await api.createSource(editing.form)
       }
+      toast("success", editing.id ? "Source updated" : "Source created")
       setEditing(null)
       fetchSources()
     } catch (err) {
@@ -70,10 +74,11 @@ export function SourcesTab({ refreshKey }: SourcesTabProps) {
     if (!deleting) return
     try {
       await api.deleteSource(deleting.ID)
+      toast("success", `Source "${deleting.Name}" deleted`)
       setDeleting(null)
       fetchSources()
     } catch {
-      // next refresh will show current state
+      toast("error", "Failed to delete source")
       setDeleting(null)
     }
   }
@@ -106,7 +111,11 @@ export function SourcesTab({ refreshKey }: SourcesTabProps) {
   }
 
   if (loading && sources.length === 0) {
-    return <div className="p-6 text-center text-text-secondary text-sm">Loading sources...</div>
+    return (
+      <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+        {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} />)}
+      </div>
+    )
   }
 
   if (error && sources.length === 0) {

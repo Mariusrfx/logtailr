@@ -3,6 +3,8 @@ import { Plus, Pencil, Trash2, CheckCircle, XCircle } from "lucide-react"
 import { api } from "@/lib/api"
 import type { OutputRow, OutputRequest } from "@/types"
 import { DeleteConfirmModal } from "./DeleteConfirmModal"
+import { useToast } from "@/hooks/useToast"
+import { ListItemSkeleton } from "@/components/ui/Skeleton"
 import { NoDatabaseBanner, isNoDatabaseError } from "./NoDatabaseBanner"
 
 const OUTPUT_TYPES = ["opensearch", "webhook", "file"] as const
@@ -42,6 +44,7 @@ export function OutputsTab({ refreshKey }: OutputsTabProps) {
   const [deleting, setDeleting] = useState<OutputRow | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const fetchOutputs = useCallback(async () => {
     setLoading(true)
@@ -107,6 +110,7 @@ export function OutputsTab({ refreshKey }: OutputsTabProps) {
       } else {
         await api.createOutput(data)
       }
+      toast("success", editing.id ? "Output updated" : "Output created")
       setEditing(null)
       fetchOutputs()
     } catch (err) {
@@ -120,9 +124,11 @@ export function OutputsTab({ refreshKey }: OutputsTabProps) {
     if (!deleting) return
     try {
       await api.deleteOutput(deleting.ID)
+      toast("success", `Output "${deleting.Name}" deleted`)
       setDeleting(null)
       fetchOutputs()
     } catch {
+      toast("error", "Failed to delete output")
       setDeleting(null)
     }
   }
@@ -145,7 +151,11 @@ export function OutputsTab({ refreshKey }: OutputsTabProps) {
   }
 
   if (loading && outputs.length === 0) {
-    return <div className="p-6 text-center text-text-secondary text-sm">Loading outputs...</div>
+    return (
+      <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+        {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} />)}
+      </div>
+    )
   }
 
   if (error && outputs.length === 0) {

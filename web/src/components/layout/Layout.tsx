@@ -7,6 +7,8 @@ import { useHealth } from "@/hooks/useHealth"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useDynamicTitle } from "@/hooks/useDynamicTitle"
 import { WsProvider, useWsStatus } from "@/hooks/useWebSocketContext"
+import { ToastProvider } from "@/hooks/useToast"
+import { CommandPalette } from "./CommandPalette"
 import { cn } from "@/lib/utils"
 
 function LayoutInner() {
@@ -63,6 +65,7 @@ function LayoutInner() {
             <Outlet />
           </div>
         </main>
+        <CommandPalette />
       </div>
     </div>
   )
@@ -71,7 +74,9 @@ function LayoutInner() {
 export function Layout() {
   return (
     <WsProvider>
-      <LayoutInner />
+      <ToastProvider>
+        <LayoutInner />
+      </ToastProvider>
     </WsProvider>
   )
 }
