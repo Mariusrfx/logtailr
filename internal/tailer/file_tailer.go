@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"logtailr/internal/health"
 	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
@@ -96,7 +97,7 @@ func (ft *FileTailer) run(ctx context.Context, out chan<- *logline.LogLine, errC
 
 	if ft.startOffset > 0 {
 		if _, err := file.Seek(ft.startOffset, io.SeekStart); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: seek to offset %d failed, reading from start: %v\n", ft.startOffset, err)
+			slog.Warn("seek to offset failed, reading from start", "offset", ft.startOffset, "error", err)
 			ft.mu.Lock()
 			ft.lastOffset = 0
 			ft.mu.Unlock()

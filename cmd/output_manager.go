@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 
 	"logtailr/internal/config"
@@ -41,7 +41,7 @@ func (om *OutputManager) Close() error {
 func (om *OutputManager) Swap(outputsCfg *config.OutputsConfig) {
 	newWriter, err := createWriter(outputsCfg)
 	if err != nil {
-		log.Printf("Hot-reload: failed to create new output writer: %v", err)
+		slog.Error("hot-reload: failed to create new output writer", "error", err)
 		return
 	}
 
@@ -52,9 +52,9 @@ func (om *OutputManager) Swap(outputsCfg *config.OutputsConfig) {
 
 	if old != nil {
 		if err := old.Close(); err != nil {
-			log.Printf("Hot-reload: error closing old writer: %v", err)
+			slog.Error("hot-reload: error closing old writer", "error", err)
 		}
 	}
 
-	log.Println("Hot-reload: output writer swapped successfully")
+	slog.Info("hot-reload: output writer swapped")
 }

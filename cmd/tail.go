@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -249,38 +249,38 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		cw.OnChange(configwatch.ChangeSources, func(_ configwatch.ChangeType) {
 			newCfg, err := config.LoadFromStore(ctx, dbStore)
 			if err != nil {
-				log.Printf("Config change detected: sources updated but reload failed: %v", err)
+				slog.Error("config change: sources reload failed", "error", err)
 				return
 			}
-			log.Printf("Hot-reload: reconciling %d source(s)", len(newCfg.Sources))
+			slog.Info("hot-reload: reconciling sources", "count", len(newCfg.Sources))
 			tailerMgr.Reconcile(newCfg.Sources)
 		})
 		cw.OnChange(configwatch.ChangeOutputs, func(_ configwatch.ChangeType) {
 			newCfg, err := config.LoadFromStore(ctx, dbStore)
 			if err != nil {
-				log.Printf("Config change detected: outputs updated but reload failed: %v", err)
+				slog.Error("config change: outputs reload failed", "error", err)
 				return
 			}
 			outputMgr.Swap(&newCfg.Outputs)
 		})
 		cw.OnChange(configwatch.ChangeAlertRules, func(_ configwatch.ChangeType) {
 			if alertEngine == nil {
-				log.Println("Config change detected: alert rules updated (no alert engine running)")
+				slog.Warn("config change: alert rules updated but no alert engine running")
 				return
 			}
 			rules, err := reloadAlertRulesFromDB(ctx, dbStore)
 			if err != nil {
-				log.Printf("Config change detected: alert rules updated but reload failed: %v", err)
+				slog.Error("config change: alert rules reload failed", "error", err)
 				return
 			}
 			if err := alertEngine.ReloadRules(rules); err != nil {
-				log.Printf("Alert rules reload failed: %v", err)
+				slog.Error("alert rules reload failed", "error", err)
 				return
 			}
-			log.Printf("Alert rules reloaded: %d rule(s) active", len(rules))
+			slog.Info("alert rules reloaded", "count", len(rules))
 		})
 		cw.OnChange(configwatch.ChangeSettings, func(_ configwatch.ChangeType) {
-			log.Println("Config change detected: settings updated (level/regex changes require restart)")
+			slog.Info("config change: settings updated (level/regex changes require restart)")
 		})
 		cw.Start(ctx)
 	}

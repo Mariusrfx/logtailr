@@ -1,8 +1,7 @@
 package safego
 
 import (
-	"fmt"
-	"os"
+	"log/slog"
 	"runtime/debug"
 )
 
@@ -14,7 +13,7 @@ func Go(name string, fn func(), onPanic func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "PANIC in goroutine %q: %v\n%s\n", name, r, debug.Stack())
+				slog.Error("panic in goroutine", "goroutine", name, "panic", r, "stack", string(debug.Stack()))
 				if onPanic != nil {
 					onPanic()
 				}

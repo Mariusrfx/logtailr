@@ -3,10 +3,10 @@ package alert
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"logtailr/internal/health"
 	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -104,9 +104,9 @@ func (e *Engine) cleanupLoop() {
 			before := time.Now().Add(-time.Duration(defaultRetentionDays) * 24 * time.Hour)
 			deleted, err := e.eventStore.DeleteAlertEventsOlderThan(context.Background(), before)
 			if err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "alert cleanup error: %v\n", err)
+				slog.Error("alert cleanup error", "error", err)
 			} else if deleted > 0 {
-				_, _ = fmt.Fprintf(os.Stderr, "alert cleanup: deleted %d event(s) older than %d days\n", deleted, defaultRetentionDays)
+				slog.Info("alert cleanup: deleted old events", "count", deleted, "retention_days", defaultRetentionDays)
 			}
 		}
 	}
@@ -276,13 +276,13 @@ func (e *Engine) fireEvent(r *Rule, event *Event) {
 			FiredAt:  event.Timestamp,
 		}
 		if err := e.eventStore.CreateAlertEvent(context.Background(), se); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "alert persist error: %v\n", err)
+			slog.Error("alert persist error", "error", err)
 		}
 	}
 
 	for _, n := range e.notifiers {
 		if err := n.Notify(event); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "alert notify error: %v\n", err)
+			slog.Error("alert notify error", "error", err)
 		}
 	}
 }

@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"logtailr/internal/health"
@@ -102,7 +102,7 @@ func (tm *TailerManager) Reconcile(newSources []logline.SourceConfig) {
 	// Remove tailers no longer in config
 	for name := range currentNames {
 		if _, exists := newMap[name]; !exists {
-			log.Printf("Hot-reload: removing source %q", name)
+			slog.Info("hot-reload: removing source", "source", name)
 			tm.Remove(name)
 		}
 	}
@@ -110,17 +110,17 @@ func (tm *TailerManager) Reconcile(newSources []logline.SourceConfig) {
 	// Add new tailers or restart changed ones
 	for name, newSrc := range newMap {
 		if !currentNames[name] {
-			log.Printf("Hot-reload: adding source %q", name)
+			slog.Info("hot-reload: adding source", "source", name)
 			if err := tm.Add(newSrc); err != nil {
-				log.Printf("Hot-reload: failed to add source %q: %v", name, err)
+				slog.Error("hot-reload: failed to add source", "source", name, "error", err)
 			}
 			continue
 		}
 		if sourceChanged(currentConfigs[name], newSrc) {
-			log.Printf("Hot-reload: restarting source %q (config changed)", name)
+			slog.Info("hot-reload: restarting source", "source", name)
 			tm.Remove(name)
 			if err := tm.Add(newSrc); err != nil {
-				log.Printf("Hot-reload: failed to restart source %q: %v", name, err)
+				slog.Error("hot-reload: failed to restart source", "source", name, "error", err)
 			}
 		}
 	}

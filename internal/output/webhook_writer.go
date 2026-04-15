@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"logtailr/pkg/logline"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -159,7 +159,7 @@ func (ww *WebhookWriter) flushLoop() {
 			return
 		case <-ticker.C:
 			if err := ww.flush(); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "webhook flush error: %v\n", err)
+				slog.Error("webhook flush error", "error", err)
 			}
 		}
 	}

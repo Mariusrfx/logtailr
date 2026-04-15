@@ -3,7 +3,7 @@ package configwatch
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"logtailr/internal/store"
@@ -138,7 +138,7 @@ func (w *Watcher) maxUpdatedAt(ctx context.Context, table string) (time.Time, er
 	query := fmt.Sprintf(`SELECT COALESCE(MAX(updated_at), '1970-01-01'::timestamptz) FROM %s`, table)
 	err := w.store.Pool.QueryRow(ctx, query).Scan(&ts)
 	if err != nil {
-		log.Printf("configwatch: error polling %s: %v", table, err)
+		slog.Error("configwatch: polling error", "table", table, "error", err)
 		return time.Time{}, err
 	}
 	return ts, nil

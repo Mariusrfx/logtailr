@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"logtailr/pkg/logline"
 	"math"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -136,12 +136,12 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 	}
 
 	if err := ow.ensureIndexTemplate(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create index template: %v\n", err)
+		slog.Error("opensearch: failed to create index template", "error", err)
 	}
 
 	if ow.dashboardsURL != "" {
 		if err := ow.ensureIndexPattern(); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "opensearch: failed to create dashboards index pattern: %v\n", err)
+			slog.Error("opensearch: failed to create dashboards index pattern", "error", err)
 		}
 	}
 
@@ -185,7 +185,7 @@ func (ow *OpenSearchWriter) flushLoop() {
 			return
 		case <-ticker.C:
 			if err := ow.flush(); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "opensearch flush error: %v\n", err)
+				slog.Error("opensearch flush error", "error", err)
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"logtailr/internal/logger"
 	"os"
 	"path/filepath"
 
@@ -10,8 +11,10 @@ import (
 )
 
 var (
-	cfgFile string
-	dbURL   string
+	cfgFile   string
+	dbURL     string
+	logFormat string
+	logLevel  string
 )
 
 var rootCmd = &cobra.Command{
@@ -26,10 +29,12 @@ func Execute() error {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initLogger, initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dbURL, "db-url", "", "PostgreSQL connection URL (env: LOGTAILR_DB_URL)")
+	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "log output format (text or json)")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 }
 
 func initConfig() {
@@ -76,4 +81,8 @@ func initConfig() {
 			os.Exit(1)
 		}
 	}
+}
+
+func initLogger() {
+	logger.Setup(logFormat, logLevel)
 }

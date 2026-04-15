@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"logtailr/internal/alert"
 	"logtailr/internal/config"
 	"logtailr/internal/health"
@@ -117,7 +117,7 @@ func NewServer(sc ServerConfig) *Server {
 	// Serve embedded frontend assets if --web is enabled
 	if sc.WebEnabled && web.HasAssets() {
 		mux.Handle("/", web.Handler())
-		log.Printf("Web dashboard enabled (embedded assets)")
+		slog.Info("web dashboard enabled (embedded assets)")
 	}
 
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
@@ -145,9 +145,9 @@ func (s *Server) Start() {
 	safego.Go("ws-hub", s.hub.Run, nil)
 	safego.Go("metrics-updater", func() { s.runMetricsUpdater(ctx) }, nil)
 	safego.Go("http-server", func() {
-		log.Printf("API server listening on %s", s.httpServer.Addr)
+		slog.Info("API server listening", "addr", s.httpServer.Addr)
 		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("API server error: %v", err)
+			slog.Error("API server error", "error", err)
 		}
 	}, nil)
 }

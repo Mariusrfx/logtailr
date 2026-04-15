@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"log/slog"
 	"logtailr/pkg/logline"
 	"os"
 	"path/filepath"
@@ -132,14 +133,14 @@ func (fw *FileWriter) rotate() error {
 func compressFile(path string) {
 	src, err := os.Open(path)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "compress: open %s: %v\n", path, err)
+		slog.Error("compress: open failed", "path", path, "error", err)
 		return
 	}
 
 	dst, err := os.OpenFile(path+".gz", os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		_ = src.Close()
-		_, _ = fmt.Fprintf(os.Stderr, "compress: create %s.gz: %v\n", path, err)
+		slog.Error("compress: create failed", "path", path+".gz", "error", err)
 		return
 	}
 
@@ -149,14 +150,14 @@ func compressFile(path string) {
 		_ = gz.Close()
 		_ = dst.Close()
 		_ = src.Close()
-		_, _ = fmt.Fprintf(os.Stderr, "compress: copy %s: %v\n", path, err)
+		slog.Error("compress: copy failed", "path", path, "error", err)
 		return
 	}
 
 	if err := gz.Close(); err != nil {
 		_ = dst.Close()
 		_ = src.Close()
-		_, _ = fmt.Fprintf(os.Stderr, "compress: finalize %s: %v\n", path, err)
+		slog.Error("compress: finalize failed", "path", path, "error", err)
 		return
 	}
 	_ = dst.Close()
