@@ -14,7 +14,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/health': 'http://localhost:8080',
-      '/alerts': 'http://localhost:8080',
+      '/alerts/rules': 'http://localhost:8080',
       '/config': 'http://localhost:8080',
       '/metrics': 'http://localhost:8080',
       '/ws': {

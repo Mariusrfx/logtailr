@@ -113,13 +113,6 @@ export function AlertsPage() {
         )}
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div className="bg-error/10 border border-error/20 rounded-lg p-4 text-sm text-error">
-          {error}
-        </div>
-      )}
-
       {/* Events list */}
       <div className="bg-surface rounded-lg border border-border overflow-hidden">
         {loading && events.length === 0 ? (
@@ -130,6 +123,9 @@ export function AlertsPage() {
           <div className="p-8 text-center">
             <Bell className="h-8 w-8 text-text-secondary mx-auto mb-2 opacity-50" />
             <p className="text-sm text-text-secondary">No alert events found</p>
+            {error && (
+              <p className="text-xs text-text-secondary mt-1">Backend unavailable or no database configured</p>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-border">

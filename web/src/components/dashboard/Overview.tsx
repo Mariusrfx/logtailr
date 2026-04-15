@@ -5,6 +5,7 @@ import { SourceHealthCard } from "./SourceHealthCard"
 import { RecentErrors } from "./RecentErrors"
 import { useHealth } from "@/hooks/useHealth"
 import { useWsSubscribe } from "@/hooks/useWebSocketContext"
+import { api } from "@/lib/api"
 import type { AlertEvent, SourceHealth } from "@/types"
 
 export function Overview() {
@@ -32,16 +33,29 @@ export function Overview() {
     return () => clearInterval(id)
   }, [])
 
-  // Fetch alerts
+  // Fetch alerts (try CRUD endpoint first, fallback to legacy)
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch("/alerts")
-        if (!res.ok) return
-        const data = await res.json()
-        setAlerts((data.alerts || []).slice(-10))
+        const data = await api.getAlertEvents({ limit: 10 })
+        setAlerts(
+          (data.events || []).map((e) => ({
+            id: e.ID,
+            rule: e.RuleName,
+            severity: e.Severity,
+            message: e.Message,
+            source: e.Source,
+            timestamp: e.FiredAt,
+            count: e.Count,
+          }))
+        )
       } catch {
-        // ignore
+        try {
+          const data = await api.getAlerts() as { alerts?: AlertEvent[] }
+          setAlerts((data.alerts || []).slice(-10))
+        } catch {
+          // ignore
+        }
       }
     }
     void fetchAlerts()
