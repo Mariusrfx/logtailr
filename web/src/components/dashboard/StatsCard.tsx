@@ -37,7 +37,7 @@ const DURATION = 400
 
 function AnimatedValue({ value }: { value: string | number }) {
   const num = typeof value === "number" ? value : parseInt(value.replace(/\D/g, ""), 10)
-  const isNumeric = !isNaN(num) && typeof value !== "string" || /^\d[\d,]*$/.test(String(value))
+  const isNumeric = typeof value === "number" || /^\d[\d,]*$/.test(String(value))
 
   const [display, setDisplay] = useState(isNumeric ? 0 : value)
   const raf = useRef(0)
@@ -63,7 +63,7 @@ function AnimatedValue({ value }: { value: string | number }) {
 
     const step = (now: number) => {
       const t = Math.min((now - start) / DURATION, 1)
-      const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      const eased = 1 - Math.pow(1 - t, 3)
       const current = Math.round(from + (to - from) * eased)
       setDisplay(current.toLocaleString())
       if (t < 1) raf.current = requestAnimationFrame(step)
