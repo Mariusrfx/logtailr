@@ -109,13 +109,13 @@ func (jt *JournalctlTailer) run(ctx context.Context, out chan<- *logline.LogLine
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		jt.ReportFailed(err)
-		errChan <- fmt.Errorf("journalctl stdout pipe: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("journalctl stdout pipe: %w", err))
 		return
 	}
 
 	if err := cmd.Start(); err != nil {
 		jt.ReportFailed(err)
-		errChan <- fmt.Errorf("journalctl failed for unit %q: %w", jt.unit, err)
+		sendErr(ctx, errChan, fmt.Errorf("journalctl failed for unit %q: %w", jt.unit, err))
 		return
 	}
 

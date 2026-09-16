@@ -125,7 +125,7 @@ func (kt *KubernetesTailer) runWithReconnect(ctx context.Context, out chan<- *lo
 
 		// Pod exited — attempt reconnect with backoff
 		kt.ReportDegraded(fmt.Errorf("pod log stream ended, reconnecting in %s", delay))
-		errChan <- fmt.Errorf("k8s: pod log stream ended, reconnecting in %s", delay)
+		sendErr(ctx, errChan, fmt.Errorf("k8s: pod log stream ended, reconnecting in %s", delay))
 
 		select {
 		case <-ctx.Done():
@@ -140,8 +140,8 @@ func (kt *KubernetesTailer) runWithReconnect(ctx context.Context, out chan<- *lo
 	}
 }
 
-// run executes a single kubectl logs session. Returns true if the process started
-// and then exited (eligible for reconnect), false if it failed to start.
+// run executes a single kubectl logs session; returns true only in follow
+// mode when the process exited (eligible for reconnect).
 func (kt *KubernetesTailer) run(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) bool {
 	args := kt.buildArgs()
 
@@ -150,7 +150,7 @@ func (kt *KubernetesTailer) run(ctx context.Context, out chan<- *logline.LogLine
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		kt.ReportFailed(err)
-		errChan <- fmt.Errorf("kubectl stdout pipe: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("kubectl stdout pipe: %w", err))
 		return false
 	}
 
@@ -158,7 +158,7 @@ func (kt *KubernetesTailer) run(ctx context.Context, out chan<- *logline.LogLine
 
 	if err := cmd.Start(); err != nil {
 		kt.ReportFailed(err)
-		errChan <- fmt.Errorf("kubectl logs failed: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("kubectl logs failed: %w", err))
 		return false
 	}
 
@@ -195,11 +195,9 @@ func (kt *KubernetesTailer) run(ctx context.Context, out chan<- *logline.LogLine
 	}
 
 	if err := scanner.Err(); err != nil {
-		select {
-		case <-ctx.Done():
-		default:
+		if ctx.Err() == nil {
 			kt.ReportDegraded(err)
-			errChan <- fmt.Errorf("kubectl logs read error: %w", err)
+			sendErr(ctx, errChan, fmt.Errorf("kubectl logs read error: %w", err))
 		}
 	}
 
@@ -207,11 +205,18 @@ func (kt *KubernetesTailer) run(ctx context.Context, out chan<- *logline.LogLine
 		select {
 		case <-ctx.Done():
 		default:
-			// Process exited — eligible for reconnect
+			if kt.follow {
+				// Process exited while following — eligible for reconnect
+			} else {
+				kt.ReportDegraded(fmt.Errorf("kubectl logs exited: %w", err))
+				sendErr(ctx, errChan, fmt.Errorf("kubectl logs exited: %w", err))
+			}
 		}
 	}
 
-	return true
+	// Without follow the read is one-shot: a finished process is a clean end,
+	// not a reconnect trigger (that would re-emit the whole log forever).
+	return kt.follow
 }
 
 // buildArgs constructs the kubectl logs arguments.

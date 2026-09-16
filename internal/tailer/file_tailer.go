@@ -90,7 +90,7 @@ func (ft *FileTailer) run(ctx context.Context, out chan<- *logline.LogLine, errC
 	file, err := os.Open(ft.path)
 	if err != nil {
 		ft.ReportFailed(err)
-		errChan <- fmt.Errorf("failed to open log source: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("failed to open log source: %w", err))
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -175,14 +175,14 @@ func (ft *FileTailer) followFile(ctx context.Context, file *os.File, reader *buf
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		ft.ReportFailed(err)
-		errChan <- fmt.Errorf("failed to create file watcher: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("failed to create file watcher: %w", err))
 		return
 	}
 	defer func() { _ = watcher.Close() }()
 
 	if err := watcher.Add(ft.path); err != nil {
 		ft.ReportFailed(err)
-		errChan <- fmt.Errorf("failed to watch log source: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("failed to watch log source: %w", err))
 		return
 	}
 
@@ -197,6 +197,11 @@ func (ft *FileTailer) followFile(ctx context.Context, file *os.File, reader *buf
 			}
 
 			if event.Has(fsnotify.Write) {
+				if err := ft.handleTruncation(file, reader); err != nil {
+					ft.ReportDegraded(err)
+					sendErr(ctx, errChan, err)
+					return
+				}
 				if err := ft.readLines(ctx, reader, out); err != nil {
 					return
 				}
@@ -210,7 +215,7 @@ func (ft *FileTailer) followFile(ctx context.Context, file *os.File, reader *buf
 				newFile, newReader, err := ft.reopenFile(ctx, watcher)
 				if err != nil {
 					ft.ReportFailed(err)
-					errChan <- fmt.Errorf("failed to reopen log source after rotation: %w", err)
+					sendErr(ctx, errChan, fmt.Errorf("failed to reopen log source after rotation: %w", err))
 					return
 				}
 
@@ -227,9 +232,35 @@ func (ft *FileTailer) followFile(ctx context.Context, file *os.File, reader *buf
 				return
 			}
 			ft.ReportDegraded(watchErr)
-			errChan <- fmt.Errorf("file watcher error: %w", watchErr)
+			sendErr(ctx, errChan, fmt.Errorf("file watcher error: %w", watchErr))
 		}
 	}
+}
+
+// handleTruncation detects copytruncate rotation (file shorter than the
+// read position) and re-syncs the reader to the start of the file.
+func (ft *FileTailer) handleTruncation(file *os.File, reader *bufio.Reader) error {
+	pos, err := file.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return fmt.Errorf("stat read position: %w", err)
+	}
+	fi, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat log file: %w", err)
+	}
+	if fi.Size() >= pos {
+		return nil
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("re-seek truncated file: %w", err)
+	}
+	reader.Reset(file)
+	ft.mu.Lock()
+	ft.lastOffset = 0
+	ft.mu.Unlock()
+	slog.Info("log file truncated, re-syncing from start", "path", ft.path)
+	return nil
 }
 
 // reopenFile attempts to reopen the file after rotation, with retries.

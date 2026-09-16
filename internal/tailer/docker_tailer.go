@@ -84,7 +84,7 @@ func (dt *DockerTailer) runWithReconnect(ctx context.Context, out chan<- *loglin
 
 		// Container exited — attempt reconnect with backoff
 		dt.ReportDegraded(fmt.Errorf("container %q exited, reconnecting in %s", dt.container, delay))
-		errChan <- fmt.Errorf("docker: container %q exited, reconnecting in %s", dt.container, delay)
+		sendErr(ctx, errChan, fmt.Errorf("docker: container %q exited, reconnecting in %s", dt.container, delay))
 
 		select {
 		case <-ctx.Done():
@@ -99,8 +99,8 @@ func (dt *DockerTailer) runWithReconnect(ctx context.Context, out chan<- *loglin
 	}
 }
 
-// run executes a single docker logs session. Returns true if the process started
-// and then exited (eligible for reconnect), false if it failed to start.
+// run executes a single docker logs session; returns true only in follow
+// mode when the process exited (eligible for reconnect).
 func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, errChan chan<- error) bool {
 	args := []string{"logs", "--timestamps"}
 	if dt.follow {
@@ -113,7 +113,7 @@ func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, er
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		dt.ReportFailed(err)
-		errChan <- fmt.Errorf("docker stdout pipe: %w", err)
+		sendErr(ctx, errChan, fmt.Errorf("docker stdout pipe: %w", err))
 		return false
 	}
 
@@ -121,7 +121,7 @@ func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, er
 
 	if err := cmd.Start(); err != nil {
 		dt.ReportFailed(err)
-		errChan <- fmt.Errorf("docker logs failed for %q: %w", dt.container, err)
+		sendErr(ctx, errChan, fmt.Errorf("docker logs failed for %q: %w", dt.container, err))
 		return false
 	}
 
@@ -160,11 +160,9 @@ func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, er
 	}
 
 	if err := scanner.Err(); err != nil {
-		select {
-		case <-ctx.Done():
-		default:
+		if ctx.Err() == nil {
 			dt.ReportDegraded(err)
-			errChan <- fmt.Errorf("docker logs read error: %w", err)
+			sendErr(ctx, errChan, fmt.Errorf("docker logs read error: %w", err))
 		}
 	}
 
@@ -173,11 +171,18 @@ func (dt *DockerTailer) run(ctx context.Context, out chan<- *logline.LogLine, er
 		select {
 		case <-ctx.Done():
 		default:
-			// Process exited — eligible for reconnect
+			if dt.follow {
+				// Process exited while following — eligible for reconnect
+			} else {
+				dt.ReportDegraded(fmt.Errorf("docker logs for %q exited: %w", dt.container, err))
+				sendErr(ctx, errChan, fmt.Errorf("docker logs for %q exited: %w", dt.container, err))
+			}
 		}
 	}
 
-	return true
+	// Without follow the read is one-shot: a finished process is a clean end,
+	// not a reconnect trigger (that would re-emit the whole log forever).
+	return dt.follow
 }
 
 func parseDockerLine(line string) (time.Time, string) {
