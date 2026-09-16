@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"logtailr/internal/ssrf"
 	"net/http"
 )
 
@@ -46,6 +47,19 @@ func (s *Server) handleSetSetting(w http.ResponseWriter, r *http.Request) {
 	if body.Value == nil {
 		writeError(w, http.StatusBadRequest, "value is required")
 		return
+	}
+	if key == "alerts.notify.webhook.url" {
+		var u string
+		if err := json.Unmarshal(body.Value, &u); err != nil || u == "" {
+			writeError(w, http.StatusBadRequest, "value must be a non-empty URL string")
+			return
+		}
+		if !s.allowLocal {
+			if err := ssrf.ValidateExternalURL(u); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 	}
 	if err := s.store.SetSetting(r.Context(), key, body.Value); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save setting")

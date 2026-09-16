@@ -110,8 +110,9 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 
 // withRateLimit applies a simple per-IP rate limiter.
 // Allows `limit` requests per `window` per IP. Returns 429 when exceeded.
+// When trustProxy is true, X-Forwarded-For is used to identify the client IP.
 // The cleanup goroutine exits when the stop channel is closed.
-func withRateLimit(next http.Handler, limit int, window time.Duration, stop <-chan struct{}) http.Handler {
+func withRateLimit(next http.Handler, limit int, window time.Duration, stop <-chan struct{}, trustProxy bool) http.Handler {
 	type entry struct {
 		count   int
 		resetAt time.Time
@@ -152,9 +153,13 @@ func withRateLimit(next http.Handler, limit int, window time.Duration, stop <-ch
 		if idx := strings.LastIndex(ip, ":"); idx != -1 {
 			ip = ip[:idx]
 		}
-		// Trust X-Forwarded-For if behind proxy
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			ip = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+		// Only trust X-Forwarded-For when the server is behind a trusted
+		// reverse proxy; otherwise clients can spoof the header to bypass
+		// the rate limit.
+		if trustProxy {
+			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+				ip = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+			}
 		}
 
 		mu.Lock()

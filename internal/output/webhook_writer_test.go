@@ -173,3 +173,34 @@ func TestWebhookWriter_HTTPError(t *testing.T) {
 		t.Error("expected error for HTTP 500, got nil")
 	}
 }
+
+func TestWebhookWriter_RedirectToInternalIsBlocked(t *testing.T) {
+	hit := int32(0)
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.StoreInt32(&hit, 1)
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	ww, err := NewWebhookWriter(WebhookConfig{
+		URL:        redirector.URL,
+		BatchSize:  1,
+		AllowLocal: false,
+	})
+	if err != nil {
+		t.Fatalf("NewWebhookWriter() error = %v", err)
+	}
+	defer func() { _ = ww.Close() }()
+
+	err = ww.Write(newTestLine("error", "test"))
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("expected the redirect to the internal target to be blocked, got %v", err)
+	}
+	if atomic.LoadInt32(&hit) != 0 {
+		t.Fatal("internal redirect target must never be reached")
+	}
+}

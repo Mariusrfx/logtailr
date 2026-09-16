@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,6 +55,8 @@ var (
 	resumeName      string
 	apiToken        string
 	webEnabled      bool
+	insecureAPI     bool
+	trustProxy      bool
 )
 
 var tailCmd = &cobra.Command{
@@ -87,6 +90,8 @@ func init() {
 	tailCmd.Flags().StringVar(&resumeName, "resume", "", "Resume from a saved bookmark position")
 	tailCmd.Flags().StringVar(&apiToken, "api-token", "", "Bearer token for API authentication (env: LOGTAILR_API_TOKEN)")
 	tailCmd.Flags().BoolVar(&webEnabled, "web", false, "Serve embedded web dashboard (requires build-web)")
+	tailCmd.Flags().BoolVar(&insecureAPI, "insecure-api", false, "Allow binding the API to a non-loopback address without an API token (not recommended)")
+	tailCmd.Flags().BoolVar(&trustProxy, "trust-proxy", false, "Trust X-Forwarded-For headers from a reverse proxy (rate limiting by real client IP)")
 }
 
 func runTail(cmd *cobra.Command, _ []string) error {
@@ -174,7 +179,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 
 	var alertEngine *alert.Engine
 	if fullCfg != nil && fullCfg.Alerts != nil && fullCfg.Alerts.Enabled {
-		alertEngine, err = buildAlertEngine(fullCfg.Alerts, healthMonitor)
+		alertEngine, err = buildAlertEngine(fullCfg.Alerts, healthMonitor, allowLocal)
 		if err != nil {
 			return fmt.Errorf("alerts: %w", err)
 		}
@@ -194,6 +199,12 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		if token == "" {
 			token = viper.GetString("api.token")
 		}
+		if isNonLoopbackAddr(apiAddr) && token == "" && !insecureAPI {
+			return fmt.Errorf("api: refusing to bind non-loopback address %q without an API token; set --api-token (or LOGTAILR_API_TOKEN) or pass --insecure-api to disable this check", apiAddr)
+		}
+		if isNonLoopbackAddr(apiAddr) && token == "" {
+			slog.Warn("api: serving without authentication", "addr", listenAddr)
+		}
 		apiServer = api.NewServer(api.ServerConfig{
 			Addr:        listenAddr,
 			Monitor:     healthMonitor,
@@ -203,6 +214,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 			APIToken:    token,
 			AllowLocal:  allowLocal,
 			WebEnabled:  webEnabled,
+			TrustProxy:  trustProxy,
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
@@ -449,4 +461,24 @@ func applyGlobalOverrides(cmd *cobra.Command, g *config.GlobalConfig) {
 	if g.AggregateWindow != "" && !cmd.Flags().Changed("aggregate-window") {
 		aggregateWindow = g.AggregateWindow
 	}
+}
+
+// isNonLoopbackAddr reports whether a bind address is reachable from outside
+// the host (anything that is not 127.0.0.0/8, ::1, or "localhost"). Hostnames
+// are treated as non-loopback because they may resolve to external addresses.
+func isNonLoopbackAddr(addr string) bool {
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.TrimPrefix(host, "[")
+	host = strings.TrimSuffix(host, "]")
+	if host == "" || host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return true
+	}
+	return !ip.IsLoopback()
 }

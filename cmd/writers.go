@@ -53,6 +53,7 @@ func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
 			MaxRetries:    osCfg.MaxRetries,
 			TemplateName:  osCfg.TemplateName,
 			DashboardsURL: osCfg.DashboardsURL,
+			AllowLocal:    allowLocal,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("opensearch output: %w", err)
@@ -67,6 +68,7 @@ func createWriter(outputsCfg *config.OutputsConfig) (output.Writer, error) {
 			MinLevel:     wh.MinLevel,
 			BatchSize:    wh.BatchSize,
 			BatchTimeout: wh.BatchTimeout,
+			AllowLocal:   allowLocal,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("webhook output: %w", err)

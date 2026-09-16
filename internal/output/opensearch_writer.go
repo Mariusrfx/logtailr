@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"logtailr/internal/safego"
+	"logtailr/internal/ssrf"
 	"logtailr/pkg/logline"
 	"math"
 	"net/http"
@@ -41,6 +42,9 @@ type OpenSearchConfig struct {
 	MaxRetries    int      `mapstructure:"max_retries"`
 	TemplateName  string   `mapstructure:"template_name"`
 	DashboardsURL string   `mapstructure:"dashboards_url"`
+	// AllowLocal disables SSRF protection (redirect re-validation) for local
+	// development. Set programmatically, never from user config.
+	AllowLocal bool
 }
 
 type OpenSearchWriter struct {
@@ -119,8 +123,9 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 
 	ow := &OpenSearchWriter{
 		client: &http.Client{
-			Timeout:   defaultHTTPTimeout,
-			Transport: transport,
+			Timeout:       defaultHTTPTimeout,
+			Transport:     transport,
+			CheckRedirect: ssrf.RedirectGuard(cfg.AllowLocal),
 		},
 		hosts:         cfg.Hosts,
 		index:         cfg.Index,

@@ -101,8 +101,16 @@ func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Fetch the existing row so masked secrets echoed back by the client
+	// (e.g. "****") don't overwrite the stored credentials.
+	existing, err := s.store.GetOutputByID(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	row := outputRequestToRow(&req)
 	row.ID = id
+	row.Config = mergeMaskedSecrets(existing.Config, row.Config)
 	if err := s.store.UpdateOutput(r.Context(), row); err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -124,6 +132,47 @@ func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// mergeMaskedSecrets restores the original secret values where the incoming
+// config carries the mask placeholder, so updating an output does not destroy
+// stored credentials.
+func mergeMaskedSecrets(existing, incoming []byte) []byte {
+	if len(incoming) == 0 {
+		return existing
+	}
+	if len(existing) == 0 {
+		return incoming
+	}
+	var oldMap, newMap map[string]any
+	if err := json.Unmarshal(existing, &oldMap); err != nil {
+		return incoming
+	}
+	if err := json.Unmarshal(incoming, &newMap); err != nil {
+		return incoming
+	}
+	restoreMaskedSecrets(newMap, oldMap)
+	merged, err := json.Marshal(newMap)
+	if err != nil {
+		return incoming
+	}
+	return merged
+}
+
+func restoreMaskedSecrets(newMap, oldMap map[string]any) {
+	for k, v := range newMap {
+		if s, ok := v.(string); ok && s == secretMask {
+			if old, exists := oldMap[k]; exists {
+				newMap[k] = old
+			}
+			continue
+		}
+		if nested, ok := v.(map[string]any); ok {
+			if oldNested, ok := oldMap[k].(map[string]any); ok {
+				restoreMaskedSecrets(nested, oldNested)
+			}
+		}
+	}
 }
 
 func outputRequestToRow(req *outputRequest) *store.OutputRow {

@@ -47,7 +47,7 @@ func TestWebhookNotifier_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	n := NewWebhookNotifier(server.URL)
+	n := NewWebhookNotifier(server.URL, true)
 	defer func() {
 		if err := n.Close(); err != nil {
 			t.Errorf("close: %v", err)
@@ -81,7 +81,7 @@ func TestWebhookNotifier_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	n := NewWebhookNotifier(server.URL)
+	n := NewWebhookNotifier(server.URL, true)
 	defer func() {
 		if err := n.Close(); err != nil {
 			t.Errorf("close: %v", err)

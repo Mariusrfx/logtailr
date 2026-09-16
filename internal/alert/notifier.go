@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"logtailr/internal/ssrf"
 	"net/http"
 	"os"
 	"time"
@@ -48,10 +49,15 @@ type WebhookNotifier struct {
 	url    string
 }
 
-func NewWebhookNotifier(url string) *WebhookNotifier {
+// NewWebhookNotifier creates a webhook notifier. When allowLocal is false,
+// redirect targets are re-validated against internal networks (SSRF).
+func NewWebhookNotifier(url string, allowLocal bool) *WebhookNotifier {
 	return &WebhookNotifier{
-		client: &http.Client{Timeout: webhookHTTPTimeout},
-		url:    url,
+		client: &http.Client{
+			Timeout:       webhookHTTPTimeout,
+			CheckRedirect: ssrf.RedirectGuard(allowLocal),
+		},
+		url: url,
 	}
 }
 

@@ -1,8 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"logtailr/internal/store"
+	"logtailr/pkg/logline"
 	"net/http"
+	"strings"
+	"time"
 )
 
 type alertRuleRequest struct {
@@ -72,6 +76,10 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "field too long")
 		return
 	}
+	if err := validateAlertRuleRequest(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	row := alertRuleRequestToRow(&req)
 	if err := s.store.CreateAlertRule(r.Context(), row); err != nil {
 		writeError(w, http.StatusConflict, "alert rule already exists or invalid data")
@@ -91,6 +99,10 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	var req alertRuleRequest
 	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateAlertRuleRequest(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -117,6 +129,30 @@ func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateAlertRuleRequest checks the fields that the engine depends on
+// (durations and level) before they are persisted.
+func validateAlertRuleRequest(req *alertRuleRequest) error {
+	if req.Window != "" {
+		if _, err := time.ParseDuration(req.Window); err != nil {
+			return fmt.Errorf("invalid window %q (expected a duration like \"30s\" or \"5m\")", req.Window)
+		}
+	}
+	if req.Cooldown != "" {
+		if _, err := time.ParseDuration(req.Cooldown); err != nil {
+			return fmt.Errorf("invalid cooldown %q (expected a duration like \"30s\" or \"5m\")", req.Cooldown)
+		}
+	}
+	if req.Threshold < 0 {
+		return fmt.Errorf("threshold must be >= 0")
+	}
+	if req.Level != "" {
+		if _, ok := logline.LogLevels[strings.ToLower(req.Level)]; !ok {
+			return fmt.Errorf("invalid level %q", req.Level)
+		}
+	}
+	return nil
 }
 
 func alertRuleRequestToRow(req *alertRuleRequest) *store.AlertRuleRow {

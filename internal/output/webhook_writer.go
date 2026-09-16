@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"logtailr/internal/ssrf"
 	"logtailr/pkg/logline"
 	"net/http"
 	"strings"
@@ -27,6 +28,9 @@ type WebhookConfig struct {
 	MinLevel     string `mapstructure:"min_level"`
 	BatchSize    int    `mapstructure:"batch_size"`
 	BatchTimeout string `mapstructure:"batch_timeout"`
+	// AllowLocal disables SSRF protection (redirect re-validation) for local
+	// development. Set programmatically, never from user config.
+	AllowLocal bool
 }
 
 type webhookPayload struct {
@@ -100,7 +104,8 @@ func NewWebhookWriter(cfg WebhookConfig) (*WebhookWriter, error) {
 
 	ww := &WebhookWriter{
 		client: &http.Client{
-			Timeout: defaultWebhookHTTPTimeout,
+			Timeout:       defaultWebhookHTTPTimeout,
+			CheckRedirect: ssrf.RedirectGuard(cfg.AllowLocal),
 		},
 		url:          cfg.URL,
 		minLevel:     minLevel,

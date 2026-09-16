@@ -2,9 +2,8 @@ package config
 
 import (
 	"fmt"
+	"logtailr/internal/ssrf"
 	"logtailr/pkg/logline"
-	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -533,34 +532,6 @@ func validateLabelSelector(selector string) error {
 	return nil
 }
 
-// validateExternalURL checks that a URL is valid and not targeting internal/private networks (SSRF prevention).
-func ValidateExternalURL(rawURL string) error {
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		return fmt.Errorf("must start with http:// or https://")
-	}
-
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
-	}
-
-	host := u.Hostname()
-	if host == "" {
-		return fmt.Errorf("URL must have a hostname")
-	}
-
-	// Check for well-known dangerous hostnames
-	if host == "localhost" || host == "metadata.google.internal" {
-		return fmt.Errorf("internal hostname %q not allowed", host)
-	}
-
-	// Check if it's an IP address pointing to internal networks
-	ip := net.ParseIP(host)
-	if ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			return fmt.Errorf("internal/private IP address %q not allowed", host)
-		}
-	}
-
-	return nil
-}
+// ValidateExternalURL re-exports ssrf.ValidateExternalURL so existing callers
+// keep a single import.
+var ValidateExternalURL = ssrf.ValidateExternalURL

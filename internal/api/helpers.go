@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"logtailr/internal/config"
+	"logtailr/internal/ssrf"
 	"logtailr/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -77,6 +77,10 @@ const maxFieldLen = 1024
 // sensitiveKeys are JSON keys in output config that should be masked in API responses.
 var sensitiveKeys = []string{"password", "token", "secret", "api_key", "apikey"}
 
+// secretMask is the placeholder used by maskMapSecrets; updates carrying it
+// keep the previously stored value.
+const secretMask = "****"
+
 // maskOutputSecrets returns a copy of the OutputRow with sensitive fields in Config masked.
 func maskOutputSecrets(row *store.OutputRow) *store.OutputRow {
 	if row == nil || len(row.Config) == 0 {
@@ -105,7 +109,7 @@ func maskMapSecrets(m map[string]any) {
 		for _, sensitive := range sensitiveKeys {
 			if strings.Contains(lower, sensitive) {
 				if s, ok := v.(string); ok && s != "" {
-					m[k] = "****"
+					m[k] = secretMask
 				}
 				break
 			}
@@ -130,7 +134,7 @@ func validateOutputConfigSSRF(outputType string, cfgJSON json.RawMessage) error 
 	switch outputType {
 	case "webhook":
 		if rawURL, ok := cfgMap["url"].(string); ok && rawURL != "" {
-			if err := config.ValidateExternalURL(rawURL); err != nil {
+			if err := ssrf.ValidateExternalURL(rawURL); err != nil {
 				return fmt.Errorf("webhook url: %w", err)
 			}
 		}
@@ -138,7 +142,7 @@ func validateOutputConfigSSRF(outputType string, cfgJSON json.RawMessage) error 
 		if hosts, ok := cfgMap["hosts"].([]any); ok {
 			for _, h := range hosts {
 				if hostStr, ok := h.(string); ok {
-					if err := config.ValidateExternalURL(hostStr); err != nil {
+					if err := ssrf.ValidateExternalURL(hostStr); err != nil {
 						return fmt.Errorf("opensearch host %q: %w", hostStr, err)
 					}
 				}

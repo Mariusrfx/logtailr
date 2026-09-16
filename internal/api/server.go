@@ -41,6 +41,7 @@ type Server struct {
 	alertEngine       *alert.Engine
 	store             *store.Store
 	allowLocal        bool
+	trustProxy        bool
 	startTime         time.Time
 	cancelCtx         context.CancelFunc
 	rateLimitStop     chan struct{}
@@ -56,6 +57,9 @@ type ServerConfig struct {
 	APIToken    string
 	AllowLocal  bool
 	WebEnabled  bool
+	// TrustProxy enables trusting X-Forwarded-For headers for rate limiting.
+	// Only set when logtailr runs behind a trusted reverse proxy.
+	TrustProxy bool
 }
 
 func NewServer(sc ServerConfig) *Server {
@@ -70,6 +74,7 @@ func NewServer(sc ServerConfig) *Server {
 		alertEngine: sc.AlertEngine,
 		store:       sc.Store,
 		allowLocal:  sc.AllowLocal,
+		trustProxy:  sc.TrustProxy,
 		startTime:   time.Now(),
 	}
 	s.metrics = NewMetrics(registry)
@@ -127,7 +132,7 @@ func NewServer(sc ServerConfig) *Server {
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
 
 	var handler http.Handler = mux
-	handler = withRateLimit(handler, 300, 1*time.Minute, s.rateLimitStop) // 300 req/min per IP
+	handler = withRateLimit(handler, 300, 1*time.Minute, s.rateLimitStop, s.trustProxy) // 300 req/min per IP
 	handler = withAuth(handler, sc.APIToken)
 	handler = withSecurityHeaders(handler)
 	handler = withCORS(handler, allowedOrigin)

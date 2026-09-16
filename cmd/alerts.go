@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-func buildAlertEngine(cfg *config.AlertsConfig, monitor *health.Monitor) (*alert.Engine, error) {
+func buildAlertEngine(cfg *config.AlertsConfig, monitor *health.Monitor, allowLocal bool) (*alert.Engine, error) {
 	rules, err := convertAlertRules(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	notifiers := buildAlertNotifiers(cfg)
+	notifiers := buildAlertNotifiers(cfg, allowLocal)
 
 	engine, err := alert.NewEngine(rules, notifiers)
 	if err != nil {
@@ -127,7 +127,7 @@ func reloadAlertRulesFromDB(ctx context.Context, st *store.Store) ([]alert.Rule,
 	return rules, nil
 }
 
-func buildAlertNotifiers(cfg *config.AlertsConfig) []alert.Notifier {
+func buildAlertNotifiers(cfg *config.AlertsConfig, allowLocal bool) []alert.Notifier {
 	var notifiers []alert.Notifier
 
 	if cfg.Notify.Console {
@@ -135,7 +135,7 @@ func buildAlertNotifiers(cfg *config.AlertsConfig) []alert.Notifier {
 	}
 
 	if cfg.Notify.Webhook != nil && cfg.Notify.Webhook.URL != "" {
-		notifiers = append(notifiers, alert.NewWebhookNotifier(cfg.Notify.Webhook.URL))
+		notifiers = append(notifiers, alert.NewWebhookNotifier(cfg.Notify.Webhook.URL, allowLocal))
 	}
 
 	if cfg.Notify.Email != nil && cfg.Notify.Email.Host != "" {
