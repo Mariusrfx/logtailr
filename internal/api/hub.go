@@ -8,6 +8,7 @@ import (
 const (
 	hubBroadcastBuffer = 256
 	clientSendBuffer   = 64
+	hubConnBuffer      = 64
 )
 
 type Hub struct {
@@ -30,8 +31,8 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		broadcast:  make(chan *logline.LogLine, hubBroadcastBuffer),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		register:   make(chan *Client, hubConnBuffer),
+		unregister: make(chan *Client, hubConnBuffer),
 		done:       make(chan struct{}),
 	}
 }
@@ -90,12 +91,22 @@ func (h *Hub) Broadcast(line *logline.LogLine) {
 	}
 }
 
+// Register adds a client to the hub. It never blocks after Stop has been
+// called.
 func (h *Hub) Register(client *Client) {
-	h.register <- client
+	select {
+	case h.register <- client:
+	case <-h.done:
+	}
 }
 
+// Unregister removes a client from the hub. It never blocks after Stop has
+// been called.
 func (h *Hub) Unregister(client *Client) {
-	h.unregister <- client
+	select {
+	case h.unregister <- client:
+	case <-h.done:
+	}
 }
 
 func (h *Hub) Stop() {

@@ -21,6 +21,9 @@ type TailerManager struct {
 	logChan chan<- *logline.LogLine
 	errChan chan<- error
 	ctx     context.Context
+
+	stopped     chan struct{}
+	stoppedOnce sync.Once
 }
 
 // NewTailerManager creates a manager with the given channels and health monitor.
@@ -32,7 +35,14 @@ func NewTailerManager(ctx context.Context, monitor *health.Monitor, logChan chan
 		logChan: logChan,
 		errChan: errChan,
 		ctx:     ctx,
+		stopped: make(chan struct{}),
 	}
+}
+
+// Stopped returns a channel that is closed once StopAll has finished stopping
+// all tailers. The pipeline uses it to know when it can stop draining.
+func (tm *TailerManager) Stopped() <-chan struct{} {
+	return tm.stopped
 }
 
 // Add creates and starts a tailer for the given source.
@@ -66,7 +76,8 @@ func (tm *TailerManager) Remove(name string) {
 	}
 }
 
-// StopAll stops all managed tailers.
+// StopAll stops all managed tailers and signals the Stopped channel. It is
+// idempotent: a second call is a no-op.
 func (tm *TailerManager) StopAll() {
 	tm.mu.Lock()
 	tailers := make(map[string]tailer.Tailer, len(tm.tailers))
@@ -80,6 +91,8 @@ func (tm *TailerManager) StopAll() {
 	for _, t := range tailers {
 		_ = t.Stop()
 	}
+
+	tm.stoppedOnce.Do(func() { close(tm.stopped) })
 }
 
 // Reconcile compares the current set of tailers with a new set of source configs

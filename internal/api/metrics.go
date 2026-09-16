@@ -14,6 +14,7 @@ type Metrics struct {
 	ProcessingDuration *prometheus.HistogramVec
 	ActiveSources      prometheus.Gauge
 	WebSocketClients   prometheus.Gauge
+	OutputDroppedTotal prometheus.Counter
 }
 
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -66,6 +67,12 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Number of connected WebSocket clients.",
 			},
 		),
+		OutputDroppedTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "logtailr_output_dropped_total",
+				Help: "Log lines dropped because the output queue was full.",
+			},
+		),
 	}
 
 	reg.MustRegister(
@@ -76,6 +83,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.ProcessingDuration,
 		m.ActiveSources,
 		m.WebSocketClients,
+		m.OutputDroppedTotal,
 	)
 
 	return m

@@ -161,10 +161,14 @@ func (s *Server) Stop() error {
 	if s.cancelCtx != nil {
 		s.cancelCtx()
 	}
-	s.hub.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	return s.httpServer.Shutdown(ctx)
+	// Shut down the HTTP server first: active WebSocket connections die with
+	// it and their pumps unregister in the still-running hub. Only then stop
+	// the hub, closing any Send channels the pumps have not reached yet.
+	err := s.httpServer.Shutdown(ctx)
+	s.hub.Stop()
+	return err
 }
 
 func (s *Server) Hub() *Hub {

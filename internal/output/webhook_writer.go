@@ -144,7 +144,9 @@ func (ww *WebhookWriter) Write(line *logline.LogLine) error {
 func (ww *WebhookWriter) Close() error {
 	ww.cancel()
 	<-ww.done
-	return ww.finalFlush()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownFlushTimeout)
+	defer cancel()
+	return ww.finalFlush(ctx)
 }
 
 func (ww *WebhookWriter) flushLoop() {
@@ -165,7 +167,7 @@ func (ww *WebhookWriter) flushLoop() {
 	}
 }
 
-func (ww *WebhookWriter) finalFlush() error {
+func (ww *WebhookWriter) finalFlush(ctx context.Context) error {
 	ww.mu.Lock()
 	if len(ww.buffer) == 0 {
 		ww.mu.Unlock()
@@ -175,7 +177,7 @@ func (ww *WebhookWriter) finalFlush() error {
 	ww.buffer = nil
 	ww.mu.Unlock()
 
-	return ww.sendWithContext(context.Background(), batch)
+	return ww.sendWithContext(ctx, batch)
 }
 
 func (ww *WebhookWriter) flush() error {

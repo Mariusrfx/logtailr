@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"math"
 	"net/http"
@@ -26,6 +27,7 @@ const (
 	maxFlushInterval     = 60 * time.Second
 	maxBackoffWait       = 30 * time.Second
 	maxResponseBodyRead  = 1 << 20 // 1MB
+	shutdownFlushTimeout = 30 * time.Second
 )
 
 type OpenSearchConfig struct {
@@ -135,15 +137,18 @@ func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
 		done:          make(chan struct{}),
 	}
 
-	if err := ow.ensureIndexTemplate(); err != nil {
-		slog.Error("opensearch: failed to create index template", "error", err)
-	}
-
-	if ow.dashboardsURL != "" {
-		if err := ow.ensureIndexPattern(); err != nil {
-			slog.Error("opensearch: failed to create dashboards index pattern", "error", err)
+	// Run in the background so a slow/unreachable host cannot stall writer
+	// creation (which happens in the hot-reload path).
+	safego.Go("opensearch-ensure", func() {
+		if err := ow.ensureIndexTemplate(); err != nil {
+			slog.Error("opensearch: failed to create index template", "error", err)
 		}
-	}
+		if ow.dashboardsURL != "" {
+			if err := ow.ensureIndexPattern(); err != nil {
+				slog.Error("opensearch: failed to create dashboards index pattern", "error", err)
+			}
+		}
+	}, nil)
 
 	go ow.flushLoop()
 
@@ -170,7 +175,9 @@ func (ow *OpenSearchWriter) Write(line *logline.LogLine) error {
 func (ow *OpenSearchWriter) Close() error {
 	ow.cancel()
 	<-ow.done
-	return ow.finalFlush()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownFlushTimeout)
+	defer cancel()
+	return ow.finalFlush(ctx)
 }
 
 func (ow *OpenSearchWriter) flushLoop() {
@@ -191,7 +198,7 @@ func (ow *OpenSearchWriter) flushLoop() {
 	}
 }
 
-func (ow *OpenSearchWriter) finalFlush() error {
+func (ow *OpenSearchWriter) finalFlush(ctx context.Context) error {
 	ow.mu.Lock()
 	if len(ow.buffer) == 0 {
 		ow.mu.Unlock()
@@ -201,7 +208,7 @@ func (ow *OpenSearchWriter) finalFlush() error {
 	ow.buffer = nil
 	ow.mu.Unlock()
 
-	return ow.sendBulkWithContext(context.Background(), batch)
+	return ow.sendBulkWithContext(ctx, batch)
 }
 
 func (ow *OpenSearchWriter) flush() error {
@@ -227,7 +234,11 @@ func (ow *OpenSearchWriter) sendBulkWithContext(ctx context.Context, docs []json
 			if wait > maxBackoffWait {
 				wait = maxBackoffWait
 			}
-			time.Sleep(wait)
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("opensearch: bulk insert cancelled: %w", ctx.Err())
+			case <-time.After(wait):
+			}
 		}
 
 		err := ow.doRequest(ctx, body)

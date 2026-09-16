@@ -164,14 +164,6 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		fmt.Println("\nShutting down...")
-		cancel()
-	}()
-
 	healthMonitor := health.NewMonitor()
 	initialWriter, err := createWriter(outputsCfg)
 	if err != nil {
@@ -214,6 +206,9 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		})
 		apiServer.Start()
 		defer func() { _ = apiServer.Stop() }()
+		outputMgr.OnDrop(func(count int64) {
+			apiServer.Metrics().OutputDroppedTotal.Inc()
+		})
 	}
 
 	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
@@ -222,6 +217,22 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	errChan := make(chan error, errBufSize)
 
 	tailerMgr := NewTailerManager(ctx, healthMonitor, logChan, errChan)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		fmt.Println("\nShutting down...")
+		slog.Info("shutdown signal received", "signal", sig)
+		cancel()
+		// Stop tailers first: the pipeline drains the channels they were
+		// writing to before it returns.
+		tailerMgr.StopAll()
+		sig = <-sigChan
+		slog.Warn("second signal received, forcing exit", "signal", sig)
+		os.Exit(1)
+	}()
+
 	var fileTailerRef *tailer.FileTailer
 	for _, src := range sources {
 		t, err := createTailer(src, healthMonitor)
@@ -301,8 +312,10 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		startHealthUpdater(ctx, healthMonitor)
 	}
 
-	result := runPipeline(ctx, logChan, errChan, regexFilter, outputMgr, healthMonitor, apiServer, alertEngine, agg)
+	result := runPipeline(ctx, logChan, errChan, regexFilter, outputMgr, healthMonitor, apiServer, alertEngine, agg, tailerMgr.Stopped())
 
+	// Safety net: the signal handler already calls StopAll, and this is a
+	// no-op if it ran.
 	tailerMgr.StopAll()
 
 	if bookmarkName != "" && fileTailerRef != nil && len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {

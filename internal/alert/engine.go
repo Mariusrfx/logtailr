@@ -18,6 +18,7 @@ const (
 	processQueueSize     = 512
 	defaultRetentionDays = 30
 	cleanupInterval      = 1 * time.Hour
+	closeDrainTimeout    = 10 * time.Second
 )
 
 type evaluator interface {
@@ -218,7 +219,13 @@ func (e *Engine) ReloadRules(rules []Rule) error {
 
 func (e *Engine) Close() error {
 	close(e.processCh)
-	<-e.done
+	// Bound the drain: a stuck notifier (e.g. SMTP without timeout) must not
+	// hang the whole shutdown.
+	select {
+	case <-e.done:
+	case <-time.After(closeDrainTimeout):
+		slog.Warn("alert engine: draining queue timed out, continuing shutdown")
+	}
 	e.cleanupFn()
 
 	var firstErr error
