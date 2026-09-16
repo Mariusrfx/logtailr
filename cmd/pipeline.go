@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 
 	"logtailr/internal/aggregator"
 	"logtailr/internal/alert"
@@ -49,7 +49,7 @@ func runPipeline(
 			}
 
 		case err := <-errChan:
-			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			slog.Error("source error", "error", err)
 
 		case raw, ok := <-logChan:
 			if !ok {
@@ -104,7 +104,7 @@ func runPipeline(
 
 func writeAndBroadcast(line *logline.LogLine, writer output.Writer, apiServer *api.Server) {
 	if err := writer.Write(line); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Output error: %v\n", err)
+		slog.Error("output write failed", "error", err)
 	}
 	if apiServer != nil {
 		apiServer.Hub().Broadcast(line)

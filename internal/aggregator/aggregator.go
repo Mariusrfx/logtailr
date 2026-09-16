@@ -2,6 +2,7 @@ package aggregator
 
 import (
 	"fmt"
+	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"sync"
 	"time"
@@ -51,7 +52,7 @@ func New(window time.Duration, minCount int) *Aggregator {
 		nowFunc:  time.Now,
 	}
 
-	go a.flushLoop()
+	safego.Go("aggregator-flush", a.flushLoop, nil)
 
 	return a
 }

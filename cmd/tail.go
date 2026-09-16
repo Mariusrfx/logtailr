@@ -111,7 +111,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		st, err := store.New(ctx, dbURLVal)
 		cancel()
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot connect to database, falling back to YAML: %v\n", err)
+			slog.Warn("cannot connect to database, falling back to YAML", "error", err)
 		} else {
 			dbStore = st
 			defer dbStore.Close()
@@ -148,14 +148,14 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		}
 		if len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {
 			if bm.File != sources[0].Path {
-				_, _ = fmt.Fprintf(os.Stderr, "Warning: bookmark file %q differs from --file %q, reading from start\n", bm.File, sources[0].Path)
+				slog.Warn("bookmark file differs from --file, reading from start", "bookmark_file", bm.File, "file", sources[0].Path)
 			} else {
 				inode, err := bookmark.GetInode(sources[0].Path)
 				if err == nil && inode != bm.Inode {
-					_, _ = fmt.Fprintf(os.Stderr, "Warning: file inode changed (was %d, now %d), reading from start\n", bm.Inode, inode)
+					slog.Warn("file inode changed, reading from start", "inode_was", bm.Inode, "inode_now", inode)
 				} else if err == nil {
 					startOffset = bm.Offset
-					_, _ = fmt.Fprintf(os.Stderr, "Resuming from bookmark %q at offset %d\n", resumeName, startOffset)
+					slog.Info("resuming from bookmark", "bookmark", resumeName, "offset", startOffset)
 				}
 			}
 		}
@@ -308,7 +308,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 	if bookmarkName != "" && fileTailerRef != nil && len(sources) == 1 && sources[0].Type == logline.SourceTypeFile {
 		mgr, err := bookmark.NewManager()
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot save bookmark: %v\n", err)
+			slog.Warn("cannot save bookmark", "error", err)
 		} else {
 			offset := fileTailerRef.LastOffset()
 			inode, _ := bookmark.GetInode(sources[0].Path)
@@ -319,9 +319,9 @@ func runTail(cmd *cobra.Command, _ []string) error {
 				SavedAt: time.Now(),
 			}
 			if err := mgr.Save(bookmarkName, bm); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot save bookmark: %v\n", err)
+				slog.Warn("cannot save bookmark", "error", err)
 			} else {
-				_, _ = fmt.Fprintf(os.Stderr, "Bookmark %q saved at offset %d\n", bookmarkName, offset)
+				slog.Info("bookmark saved", "bookmark", bookmarkName, "offset", offset)
 			}
 		}
 	}
@@ -334,7 +334,7 @@ func buildSources(cmd *cobra.Command, dbStore *store.Store) ([]logline.SourceCon
 	if dbStore != nil {
 		cfg, err := config.LoadFromStore(cmd.Context(), dbStore)
 		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "Warning: cannot load config from DB, falling back to YAML: %v\n", err)
+			slog.Warn("cannot load config from DB, falling back to YAML", "error", err)
 		} else if len(cfg.Sources) > 0 {
 			applyGlobalOverrides(cmd, &cfg.Global)
 			return cfg.Sources, cfg, &cfg.Outputs, nil

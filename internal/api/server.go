@@ -13,6 +13,7 @@ import (
 	"logtailr/internal/store"
 	"logtailr/internal/web"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,17 +32,19 @@ const (
 )
 
 type Server struct {
-	httpServer  *http.Server
-	monitor     *health.Monitor
-	hub         *Hub
-	metrics     *Metrics
-	registry    *prometheus.Registry
-	cfg         *config.Config
-	alertEngine *alert.Engine
-	store       *store.Store
-	allowLocal  bool
-	startTime   time.Time
-	cancelCtx   context.CancelFunc
+	httpServer        *http.Server
+	monitor           *health.Monitor
+	hub               *Hub
+	metrics           *Metrics
+	registry          *prometheus.Registry
+	cfg               *config.Config
+	alertEngine       *alert.Engine
+	store             *store.Store
+	allowLocal        bool
+	startTime         time.Time
+	cancelCtx         context.CancelFunc
+	rateLimitStop     chan struct{}
+	rateLimitStopOnce sync.Once
 }
 
 type ServerConfig struct {
@@ -70,6 +73,7 @@ func NewServer(sc ServerConfig) *Server {
 		startTime:   time.Now(),
 	}
 	s.metrics = NewMetrics(registry)
+	s.rateLimitStop = make(chan struct{})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
@@ -123,7 +127,7 @@ func NewServer(sc ServerConfig) *Server {
 	allowedOrigin := fmt.Sprintf("http://%s", sc.Addr)
 
 	var handler http.Handler = mux
-	handler = withRateLimit(handler, 300, 1*time.Minute) // 300 req/min per IP
+	handler = withRateLimit(handler, 300, 1*time.Minute, s.rateLimitStop) // 300 req/min per IP
 	handler = withAuth(handler, sc.APIToken)
 	handler = withSecurityHeaders(handler)
 	handler = withCORS(handler, allowedOrigin)
@@ -153,6 +157,7 @@ func (s *Server) Start() {
 }
 
 func (s *Server) Stop() error {
+	s.rateLimitStopOnce.Do(func() { close(s.rateLimitStop) })
 	if s.cancelCtx != nil {
 		s.cancelCtx()
 	}

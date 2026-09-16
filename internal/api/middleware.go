@@ -110,7 +110,8 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 
 // withRateLimit applies a simple per-IP rate limiter.
 // Allows `limit` requests per `window` per IP. Returns 429 when exceeded.
-func withRateLimit(next http.Handler, limit int, window time.Duration) http.Handler {
+// The cleanup goroutine exits when the stop channel is closed.
+func withRateLimit(next http.Handler, limit int, window time.Duration, stop <-chan struct{}) http.Handler {
 	type entry struct {
 		count   int
 		resetAt time.Time
@@ -122,15 +123,19 @@ func withRateLimit(next http.Handler, limit int, window time.Duration) http.Hand
 	// Cleanup old entries periodically
 	safego.Go("rate-limit-cleanup", func() {
 		for {
-			time.Sleep(window)
-			mu.Lock()
-			now := time.Now()
-			for ip, e := range clients {
-				if now.After(e.resetAt) {
-					delete(clients, ip)
+			select {
+			case <-stop:
+				return
+			case <-time.After(window):
+				mu.Lock()
+				now := time.Now()
+				for ip, e := range clients {
+					if now.After(e.resetAt) {
+						delete(clients, ip)
+					}
 				}
+				mu.Unlock()
 			}
-			mu.Unlock()
 		}
 	}, nil)
 

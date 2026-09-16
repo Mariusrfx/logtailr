@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"logtailr/internal/safego"
 	"logtailr/internal/store"
 )
 
@@ -54,7 +55,7 @@ func (w *Watcher) Start(ctx context.Context) {
 	// Initialize watermarks with current timestamps
 	w.initWatermarks(ctx)
 
-	go w.run(ctx)
+	safego.Go("configwatch", func() { w.run(ctx) }, nil)
 }
 
 func (w *Watcher) run(ctx context.Context) {
