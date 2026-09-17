@@ -1,0 +1,13 @@
+.git
+bin/
+web/node_modules/
+web/dist/
+internal/web/dist/
+config.yaml
+config.dev.yaml
+*.md
+docs/
+docker-compose.yaml
+ANALYSIS.md
+roadmap.zip
+opencode.json

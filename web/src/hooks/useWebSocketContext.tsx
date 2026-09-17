@@ -38,6 +38,7 @@ export function WsProvider({ children }: WsProviderProps) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectDelayRef = useRef(RECONNECT_BASE_DELAY)
   const mountedRef = useRef(true)
+  const connectRef = useRef<() => void>(() => {})
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
@@ -72,7 +73,7 @@ export function WsProvider({ children }: WsProviderProps) {
       const delay = reconnectDelayRef.current
       reconnectDelayRef.current = Math.min(delay * 2, RECONNECT_MAX_DELAY)
       const jitter = Math.floor(Math.random() * delay * 0.1)
-      reconnectTimer.current = setTimeout(connect, delay + jitter)
+      reconnectTimer.current = setTimeout(() => connectRef.current(), delay + jitter)
     }
 
     ws.onerror = () => {
@@ -83,6 +84,7 @@ export function WsProvider({ children }: WsProviderProps) {
   }, [])
 
   useEffect(() => {
+    connectRef.current = connect
     mountedRef.current = true
     connect()
     return () => {

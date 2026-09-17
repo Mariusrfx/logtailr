@@ -21,10 +21,23 @@ func HasAssets() bool {
 
 // Handler returns an http.Handler that serves the embedded frontend assets.
 // For SPA support, any request that doesn't match a static file is served index.html.
+// When the dashboard was not built, the embedded placeholder is served instead.
 func Handler() http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		panic("web: cannot access embedded dist: " + err.Error())
+	}
+
+	_, indexErr := fs.Stat(sub, "index.html")
+	if indexErr != nil {
+		page, _ := fs.ReadFile(sub, "placeholder.html")
+		if len(page) == 0 {
+			page = []byte("<h1>logtailr</h1><p>web dashboard assets not built</p>")
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(page)
+		})
 	}
 
 	fileServer := http.FileServer(http.FS(sub))

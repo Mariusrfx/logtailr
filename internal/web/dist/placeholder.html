@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>logtailr</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        margin: 0;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      .card {
+        max-width: 480px;
+        padding: 2rem;
+        border-radius: 0.75rem;
+        background: #1e293b;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        text-align: center;
+      }
+      h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+      p { color: #94a3b8; line-height: 1.5; }
+      code {
+        background: #0f172a;
+        padding: 0.15rem 0.4rem;
+        border-radius: 0.3rem;
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>logtailr</h1>
+      <p>
+        The web dashboard assets are not embedded in this binary.
+        <br />
+        Build them with <code>make build-all</code> (or
+        <code>make build-web &amp;&amp; make build</code>) and restart.
+      </p>
+      <p>
+        The REST API and metrics are available under
+        <code>/api/v1</code> and <code>/metrics</code>.
+      </p>
+    </div>
+  </body>
+</html>

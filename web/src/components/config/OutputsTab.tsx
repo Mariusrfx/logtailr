@@ -61,7 +61,7 @@ export function OutputsTab({ refreshKey }: OutputsTabProps) {
 
   useEffect(() => { fetchOutputs() }, [fetchOutputs, refreshKey])
 
-  const buildConfig = (type: string, fields: Record<string, string>): Record<string, unknown> => {
+  const buildConfig = (_type: string, fields: Record<string, string>): Record<string, unknown> => {
     const config: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(fields)) {
       if (!v) continue

@@ -5,7 +5,7 @@ import { BrowserRouter } from "react-router-dom"
 import { AlertsPage } from "./AlertsPage"
 
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+globalThis.fetch = mockFetch
 
 function mockAlertEvents(events: unknown[] = [], total = 0) {
   mockFetch.mockResolvedValueOnce({

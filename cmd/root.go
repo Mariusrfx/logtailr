@@ -17,11 +17,14 @@ var (
 	logLevel  string
 )
 
+// version is set at build time via -X logtailr/cmd.version (Makefile/goreleaser).
+var version = "v0.1.0"
+
 var rootCmd = &cobra.Command{
 	Use:     "logtailr",
 	Short:   "Concurrent multi-source log aggregator",
 	Long:    `Logtailr is a high-performance CLI tool to tail, parse, and filter logs from files, Docker, and journalctl simultaneously.`,
-	Version: "v0.1.0",
+	Version: version,
 }
 
 func Execute() error {

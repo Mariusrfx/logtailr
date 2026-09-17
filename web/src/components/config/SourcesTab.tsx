@@ -229,7 +229,7 @@ function SourceForm({
           <FormField
             key={f}
             label={f.replace(/_/g, " ")}
-            value={(form as Record<string, unknown>)[f] as string || ""}
+            value={(form as unknown as Record<string, unknown>)[f] as string || ""}
             onChange={(v) => onChange(f, v)}
           />
         ))}

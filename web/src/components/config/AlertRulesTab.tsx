@@ -179,7 +179,7 @@ export function AlertRulesTab({ refreshKey }: AlertRulesTabProps) {
                 <label className="block text-xs text-text-secondary mb-1 capitalize">{f.replace(/_/g, " ")}</label>
                 <input
                   type={f === "threshold" ? "number" : "text"}
-                  value={(editing.form as Record<string, unknown>)[f] as string ?? ""}
+                  value={(editing.form as unknown as Record<string, unknown>)[f] as string ?? ""}
                   onChange={(e) => updateForm(f, f === "threshold" ? Number(e.target.value) : e.target.value)}
                   placeholder={f === "window" ? "e.g. 5m" : f === "pattern" ? "regex pattern" : ""}
                   className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/50"
