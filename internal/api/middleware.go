@@ -72,12 +72,12 @@ func withAuth(next http.Handler, token string) http.Handler {
 		bearerToken := extractBearerToken(r)
 		if bearerToken == "" {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="logtailr"`)
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			writeError(w, r, http.StatusUnauthorized, "authentication required")
 			return
 		}
 
 		if bearerToken != token {
-			writeError(w, http.StatusUnauthorized, "invalid token")
+			writeError(w, r, http.StatusUnauthorized, "invalid token")
 			return
 		}
 
@@ -175,7 +175,7 @@ func withRateLimit(next http.Handler, limit int, window time.Duration, stop <-ch
 
 		if count > limit {
 			w.Header().Set("Retry-After", "60")
-			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			writeError(w, r, http.StatusTooManyRequests, "rate limit exceeded")
 			return
 		}
 

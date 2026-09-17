@@ -17,7 +17,7 @@ func (s *Server) handleListSavedSearches(w http.ResponseWriter, r *http.Request)
 	}
 	rows, err := s.store.ListSavedSearches(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"saved_searches": rows, "total": len(rows)})
@@ -29,12 +29,12 @@ func (s *Server) handleGetSavedSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row, err := s.store.GetSavedSearchByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -46,16 +46,16 @@ func (s *Server) handleCreateSavedSearch(w http.ResponseWriter, r *http.Request)
 	}
 	var req savedSearchRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+		writeError(w, r, http.StatusBadRequest, "name is required")
 		return
 	}
 	row := savedSearchRequestToRow(&req)
 	if err := s.store.CreateSavedSearch(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, "already exists")
+		writeError(w, r, http.StatusConflict, "already exists")
 		return
 	}
 	writeJSON(w, http.StatusCreated, row)
@@ -67,18 +67,18 @@ func (s *Server) handleUpdateSavedSearch(w http.ResponseWriter, r *http.Request)
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req savedSearchRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := savedSearchRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateSavedSearch(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -90,11 +90,11 @@ func (s *Server) handleDeleteSavedSearch(w http.ResponseWriter, r *http.Request)
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.DeleteSavedSearch(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

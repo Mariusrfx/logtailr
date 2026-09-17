@@ -28,11 +28,15 @@ interface WsProviderProps {
   children: ReactNode
 }
 
+const RECONNECT_BASE_DELAY = 1000
+const RECONNECT_MAX_DELAY = 30000
+
 export function WsProvider({ children }: WsProviderProps) {
   const [status, setStatus] = useState<WsStatus>("disconnected")
   const listenersRef = useRef<Set<WsListener>>(new Set())
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectDelayRef = useRef(RECONNECT_BASE_DELAY)
   const mountedRef = useRef(true)
 
   const connect = useCallback(() => {
@@ -46,6 +50,7 @@ export function WsProvider({ children }: WsProviderProps) {
     const ws = new WebSocket(`${protocol}//${host}/ws/logs${params}`)
 
     ws.onopen = () => {
+      reconnectDelayRef.current = RECONNECT_BASE_DELAY
       if (mountedRef.current) setStatus("connected")
     }
 
@@ -63,7 +68,11 @@ export function WsProvider({ children }: WsProviderProps) {
     ws.onclose = () => {
       if (!mountedRef.current) return
       setStatus("disconnected")
-      reconnectTimer.current = setTimeout(connect, 3000)
+      // Exponential backoff with 10% jitter, capped; reset on successful open.
+      const delay = reconnectDelayRef.current
+      reconnectDelayRef.current = Math.min(delay * 2, RECONNECT_MAX_DELAY)
+      const jitter = Math.floor(Math.random() * delay * 0.1)
+      reconnectTimer.current = setTimeout(connect, delay + jitter)
     }
 
     ws.onerror = () => {

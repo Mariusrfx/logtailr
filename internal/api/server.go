@@ -25,7 +25,10 @@ const (
 	wsWriteWait      = 10 * time.Second
 	wsPingPeriod     = 30 * time.Second
 	wsPongWait       = 60 * time.Second
-	wsMaxMsgSize     = 512
+	wsMaxMsgSize     = 4096
+	wsMsgRateLimit   = 10 // sustained client messages per second per connection
+	wsMsgRateBurst   = 20 // burst allowed above the sustained rate
+	wsMaxLoggedMsg   = 256
 	shutdownWait     = 5 * time.Second
 	maxSourceNameLen = 128
 	maxWsClients     = 100
@@ -123,6 +126,8 @@ func NewServer(sc ServerConfig) *Server {
 
 	mux.HandleFunc("POST /api/v1/import/yaml", s.handleImportYAML)
 
+	mux.HandleFunc("GET /api/v1/audit", s.handleListAudit)
+
 	// Serve embedded frontend assets if --web is enabled
 	if sc.WebEnabled && web.HasAssets() {
 		mux.Handle("/", web.Handler())
@@ -134,6 +139,7 @@ func NewServer(sc ServerConfig) *Server {
 	var handler http.Handler = mux
 	handler = withRateLimit(handler, 300, 1*time.Minute, s.rateLimitStop, s.trustProxy) // 300 req/min per IP
 	handler = withAuth(handler, sc.APIToken)
+	handler = withRequestID(handler)
 	handler = withSecurityHeaders(handler)
 	handler = withCORS(handler, allowedOrigin)
 

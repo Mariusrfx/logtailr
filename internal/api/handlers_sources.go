@@ -30,7 +30,7 @@ func (s *Server) handleListSources(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.store.ListSources(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sources": rows, "total": len(rows)})
@@ -42,12 +42,12 @@ func (s *Server) handleGetSource(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row, err := s.store.GetSourceByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -59,42 +59,43 @@ func (s *Server) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	}
 	var req sourceRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Name == "" || req.Type == "" {
-		writeError(w, http.StatusBadRequest, "name and type are required")
+		writeError(w, r, http.StatusBadRequest, "name and type are required")
 		return
 	}
 	if !validSourceTypes[req.Type] {
-		writeError(w, http.StatusBadRequest, "invalid source type")
+		writeError(w, r, http.StatusBadRequest, "invalid source type")
 		return
 	}
 	if !validParsers[req.Parser] {
-		writeError(w, http.StatusBadRequest, "invalid parser")
+		writeError(w, r, http.StatusBadRequest, "invalid parser")
 		return
 	}
 	if len(req.Name) > maxFieldLen || len(req.Path) > maxFieldLen {
-		writeError(w, http.StatusBadRequest, "field too long")
+		writeError(w, r, http.StatusBadRequest, "field too long")
 		return
 	}
 	if req.Type == "file" {
 		if err := validateSourcePath(req.Path); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 	if req.Type == "kubernetes" && req.Kubeconfig != "" {
 		if err := validateSourcePath(req.Kubeconfig); err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
+			writeError(w, r, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
 			return
 		}
 	}
 	row := sourceRequestToRow(&req)
 	if err := s.store.CreateSource(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, "source already exists or invalid data")
+		writeError(w, r, http.StatusConflict, "source already exists or invalid data")
 		return
 	}
+	s.audit(r, "create", "source", row.ID.String())
 	writeJSON(w, http.StatusCreated, row)
 }
 
@@ -104,32 +105,33 @@ func (s *Server) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req sourceRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Type == "file" && req.Path != "" {
 		if err := validateSourcePath(req.Path); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 	if req.Kubeconfig != "" {
 		if err := validateSourcePath(req.Kubeconfig); err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
+			writeError(w, r, http.StatusBadRequest, fmt.Sprintf("kubeconfig: %v", err))
 			return
 		}
 	}
 	row := sourceRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateSource(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "update", "source", row.ID.String())
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -139,13 +141,14 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.DeleteSource(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "delete", "source", id.String())
 	w.WriteHeader(http.StatusNoContent)
 }
 

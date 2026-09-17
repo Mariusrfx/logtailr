@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"logtailr/internal/safego"
 	"logtailr/pkg/logline"
 	"net/http"
@@ -109,10 +110,51 @@ func (s *Server) wsReadPump(conn *websocket.Conn, client *Client) {
 		return nil
 	})
 
+	// Per-connection token bucket: clients can only send subscription/filter
+	// updates, so a hard cap makes flooding a connection pointless.
+	tokens := float64(wsMsgRateBurst)
+	last := time.Now()
+
 	for {
-		_, _, err := conn.ReadMessage()
+		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
+			// Echo the close frame (e.g. 1009 message too big) per spec.
+			if ce, ok := err.(*websocket.CloseError); ok {
+				_ = conn.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(ce.Code, ce.Text),
+					time.Now().Add(time.Second))
+			}
 			return
 		}
+
+		now := time.Now()
+		tokens += now.Sub(last).Seconds() * wsMsgRateLimit
+		if tokens > wsMsgRateBurst {
+			tokens = wsMsgRateBurst
+		}
+		last = now
+
+		if msgType != websocket.TextMessage {
+			slog.Debug("ws: ignoring non-text client message", "type", msgType)
+			continue
+		}
+
+		if tokens < 1 {
+			slog.Warn("ws: client message rate exceeded, closing connection", "remote", conn.RemoteAddr())
+			_ = conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "message rate limit exceeded"),
+				time.Now().Add(time.Second))
+			return
+		}
+		tokens--
+
+		slog.Debug("ws: client message", "bytes", len(msg), "msg", truncateString(string(msg), wsMaxLoggedMsg))
 	}
+}
+
+func truncateString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

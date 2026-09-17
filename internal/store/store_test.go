@@ -41,6 +41,7 @@ func testStore(t *testing.T) *Store {
 		_, _ = st.Pool.Exec(cleanCtx, `DELETE FROM settings`)
 		_, _ = st.Pool.Exec(cleanCtx, `DELETE FROM saved_searches`)
 		_, _ = st.Pool.Exec(cleanCtx, `DELETE FROM bookmarks`)
+		_, _ = st.Pool.Exec(cleanCtx, `DELETE FROM audit_log`)
 		st.Close()
 	})
 

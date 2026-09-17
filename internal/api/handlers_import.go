@@ -18,23 +18,23 @@ func (s *Server) handleImportYAML(w http.ResponseWriter, r *http.Request) {
 
 	data, err := io.ReadAll(body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
+		writeError(w, r, http.StatusBadRequest, "failed to read request body")
 		return
 	}
 
 	if len(data) == 0 {
-		writeError(w, http.StatusBadRequest, "empty request body")
+		writeError(w, r, http.StatusBadRequest, "empty request body")
 		return
 	}
 
 	cfg, err := config.ParseYAMLBytes(data, s.allowLocal)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("config validation failed: %v", err))
+		writeError(w, r, http.StatusBadRequest, fmt.Sprintf("config validation failed: %v", err))
 		return
 	}
 
 	if err := config.ImportToStore(r.Context(), s.store, cfg); err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("import failed: %v", err))
+		writeError(w, r, http.StatusInternalServerError, fmt.Sprintf("import failed: %v", err))
 		return
 	}
 

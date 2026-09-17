@@ -22,6 +22,16 @@ func (s *Server) requireStore(w http.ResponseWriter) bool {
 	return true
 }
 
+// audit records a CRUD operation; a failed insert must never fail the request.
+func (s *Server) audit(r *http.Request, action, resource, resourceID string) {
+	if s.store == nil {
+		return
+	}
+	if err := s.store.RecordAudit(r.Context(), action, resource, resourceID, requestIDFrom(r)); err != nil {
+		apiLog(r).Warn("audit record failed", "action", action, "resource", resource, "error", err)
+	}
+}
+
 func parseUUID(raw string) (pgtype.UUID, error) {
 	var id pgtype.UUID
 	if err := id.Scan(raw); err != nil {
@@ -40,8 +50,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	return dec.Decode(dst)
 }
 
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+func writeError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	if r != nil {
+		apiLog(r).Debug("api error response", "status", status, "path", r.URL.Path, "error", msg)
+	}
+	writeJSON(w, status, map[string]string{"error": msg, "request_id": requestIDFrom(r)})
 }
 
 // Validation allowlists

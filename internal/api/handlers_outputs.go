@@ -19,7 +19,7 @@ func (s *Server) handleListOutputs(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.store.ListOutputs(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 	masked := make([]*store.OutputRow, len(rows))
@@ -35,12 +35,12 @@ func (s *Server) handleGetOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row, err := s.store.GetOutputByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, maskOutputSecrets(row))
@@ -52,32 +52,33 @@ func (s *Server) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	var req outputRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Name == "" || req.Type == "" {
-		writeError(w, http.StatusBadRequest, "name and type are required")
+		writeError(w, r, http.StatusBadRequest, "name and type are required")
 		return
 	}
 	if !validOutputTypes[req.Type] {
-		writeError(w, http.StatusBadRequest, "invalid output type")
+		writeError(w, r, http.StatusBadRequest, "invalid output type")
 		return
 	}
 	if len(req.Name) > maxFieldLen {
-		writeError(w, http.StatusBadRequest, "field too long")
+		writeError(w, r, http.StatusBadRequest, "field too long")
 		return
 	}
 	if !s.allowLocal {
 		if err := validateOutputConfigSSRF(req.Type, req.Config); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
 	row := outputRequestToRow(&req)
 	if err := s.store.CreateOutput(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, "output already exists or invalid data")
+		writeError(w, r, http.StatusConflict, "output already exists or invalid data")
 		return
 	}
+	s.audit(r, "create", "output", row.ID.String())
 	writeJSON(w, http.StatusCreated, maskOutputSecrets(row))
 }
 
@@ -87,17 +88,17 @@ func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req outputRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !s.allowLocal && req.Type != "" {
 		if err := validateOutputConfigSSRF(req.Type, req.Config); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeError(w, r, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
@@ -105,16 +106,17 @@ func (s *Server) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 	// (e.g. "****") don't overwrite the stored credentials.
 	existing, err := s.store.GetOutputByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	row := outputRequestToRow(&req)
 	row.ID = id
 	row.Config = mergeMaskedSecrets(existing.Config, row.Config)
 	if err := s.store.UpdateOutput(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "update", "output", row.ID.String())
 	writeJSON(w, http.StatusOK, maskOutputSecrets(row))
 }
 
@@ -124,13 +126,14 @@ func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.DeleteOutput(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "delete", "output", id.String())
 	w.WriteHeader(http.StatusNoContent)
 }
 

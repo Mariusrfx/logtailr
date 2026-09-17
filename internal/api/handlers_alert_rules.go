@@ -28,7 +28,7 @@ func (s *Server) handleListAlertRules(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.store.ListAlertRules(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rules": rows, "total": len(rows)})
@@ -40,12 +40,12 @@ func (s *Server) handleGetAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row, err := s.store.GetAlertRuleByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
@@ -57,34 +57,35 @@ func (s *Server) handleCreateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	var req alertRuleRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Name == "" || req.Type == "" || req.Severity == "" {
-		writeError(w, http.StatusBadRequest, "name, type, and severity are required")
+		writeError(w, r, http.StatusBadRequest, "name, type, and severity are required")
 		return
 	}
 	if !validAlertRuleTypes[req.Type] {
-		writeError(w, http.StatusBadRequest, "invalid alert rule type")
+		writeError(w, r, http.StatusBadRequest, "invalid alert rule type")
 		return
 	}
 	if !validAlertSeverities[req.Severity] {
-		writeError(w, http.StatusBadRequest, "invalid severity (must be warning or critical)")
+		writeError(w, r, http.StatusBadRequest, "invalid severity (must be warning or critical)")
 		return
 	}
 	if len(req.Name) > maxFieldLen {
-		writeError(w, http.StatusBadRequest, "field too long")
+		writeError(w, r, http.StatusBadRequest, "field too long")
 		return
 	}
 	if err := validateAlertRuleRequest(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := alertRuleRequestToRow(&req)
 	if err := s.store.CreateAlertRule(r.Context(), row); err != nil {
-		writeError(w, http.StatusConflict, "alert rule already exists or invalid data")
+		writeError(w, r, http.StatusConflict, "alert rule already exists or invalid data")
 		return
 	}
+	s.audit(r, "create", "alert_rule", row.ID.String())
 	writeJSON(w, http.StatusCreated, row)
 }
 
@@ -94,24 +95,25 @@ func (s *Server) handleUpdateAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req alertRuleRequest
 	if err := decodeJSON(w, r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := validateAlertRuleRequest(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	row := alertRuleRequestToRow(&req)
 	row.ID = id
 	if err := s.store.UpdateAlertRule(r.Context(), row); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "update", "alert_rule", row.ID.String())
 	writeJSON(w, http.StatusOK, row)
 }
 
@@ -121,13 +123,14 @@ func (s *Server) handleDeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.DeleteAlertRule(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
+	s.audit(r, "delete", "alert_rule", id.String())
 	w.WriteHeader(http.StatusNoContent)
 }
 

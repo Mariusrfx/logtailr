@@ -22,7 +22,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'from' timestamp")
+			writeError(w, r, http.StatusBadRequest, "invalid 'from' timestamp")
 			return
 		}
 		f.From = &t
@@ -30,7 +30,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("to"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'to' timestamp")
+			writeError(w, r, http.StatusBadRequest, "invalid 'to' timestamp")
 			return
 		}
 		f.To = &t
@@ -38,7 +38,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
-			writeError(w, http.StatusBadRequest, "invalid 'limit'")
+			writeError(w, r, http.StatusBadRequest, "invalid 'limit'")
 			return
 		}
 		if n > 1000 {
@@ -49,7 +49,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("offset"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeError(w, http.StatusBadRequest, "invalid 'offset'")
+			writeError(w, r, http.StatusBadRequest, "invalid 'offset'")
 			return
 		}
 		f.Offset = n
@@ -57,7 +57,7 @@ func (s *Server) handleListAlertEvents(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.store.ListAlertEvents(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": rows, "total": len(rows)})
@@ -69,11 +69,11 @@ func (s *Server) handleAckAlertEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.store.AcknowledgeAlertEvent(r.Context(), id); err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		writeError(w, r, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "acknowledged"})
