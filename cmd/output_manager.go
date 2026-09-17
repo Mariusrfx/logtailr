@@ -70,6 +70,12 @@ func (om *OutputManager) Dropped() int64 {
 	return om.dropped.Load()
 }
 
+func (om *OutputManager) Writer() output.Writer {
+	om.mu.RLock()
+	defer om.mu.RUnlock()
+	return om.writer
+}
+
 // Write enqueues a line without blocking. It never fails and never blocks, so
 // the pipeline is protected from slow writers.
 func (om *OutputManager) Write(line *logline.LogLine) error {

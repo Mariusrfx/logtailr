@@ -28,3 +28,7 @@ func (mw *MultiWriter) Close() error {
 	}
 	return firstErr
 }
+
+func (mw *MultiWriter) Writers() []Writer {
+	return mw.writers
+}

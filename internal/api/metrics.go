@@ -15,6 +15,10 @@ type Metrics struct {
 	ActiveSources      prometheus.Gauge
 	WebSocketClients   prometheus.Gauge
 	OutputDroppedTotal prometheus.Counter
+
+	OutputBatchesFailedTotal  *prometheus.GaugeVec
+	OutputPendingDocs         *prometheus.GaugeVec
+	OutputPendingDroppedTotal *prometheus.GaugeVec
 }
 
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -73,6 +77,27 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 				Help: "Log lines dropped because the output queue was full.",
 			},
 		),
+		OutputBatchesFailedTotal: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "logtailr_output_batches_failed_total",
+				Help: "Cumulative bulk sends that fully failed (docs queued for retry).",
+			},
+			[]string{"output"},
+		),
+		OutputPendingDocs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "logtailr_output_pending_docs",
+				Help: "Docs waiting in the output retry queue.",
+			},
+			[]string{"output"},
+		),
+		OutputPendingDroppedTotal: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "logtailr_output_pending_dropped_total",
+				Help: "Cumulative docs dropped from a full output retry queue.",
+			},
+			[]string{"output"},
+		),
 	}
 
 	reg.MustRegister(
@@ -84,6 +109,9 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		m.ActiveSources,
 		m.WebSocketClients,
 		m.OutputDroppedTotal,
+		m.OutputBatchesFailedTotal,
+		m.OutputPendingDocs,
+		m.OutputPendingDroppedTotal,
 	)
 
 	return m

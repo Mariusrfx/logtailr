@@ -19,6 +19,7 @@ import (
 	"logtailr/internal/configwatch"
 	"logtailr/internal/filter"
 	"logtailr/internal/health"
+	"logtailr/internal/output"
 	"logtailr/internal/store"
 	"logtailr/internal/tailer"
 	"logtailr/pkg/logline"
@@ -221,6 +222,7 @@ func runTail(cmd *cobra.Command, _ []string) error {
 		outputMgr.OnDrop(func(count int64) {
 			apiServer.Metrics().OutputDroppedTotal.Inc()
 		})
+		wireOutputStats(outputMgr.Writer(), apiServer)
 	}
 
 	logBufSize := min(logChannelBuffer*len(sources), maxChannelSize)
@@ -463,9 +465,25 @@ func applyGlobalOverrides(cmd *cobra.Command, g *config.GlobalConfig) {
 	}
 }
 
-// isNonLoopbackAddr reports whether a bind address is reachable from outside
-// the host (anything that is not 127.0.0.0/8, ::1, or "localhost"). Hostnames
-// are treated as non-loopback because they may resolve to external addresses.
+func wireOutputStats(w output.Writer, apiServer *api.Server) {
+	if mw, ok := w.(*output.MultiWriter); ok {
+		for _, c := range mw.Writers() {
+			wireOutputStats(c, apiServer)
+		}
+		return
+	}
+	sw, ok := w.(output.StatsWriter)
+	if !ok {
+		return
+	}
+	sw.SetStatsSink(func(failed int64, pending int, dropped int64) {
+		m := apiServer.Metrics()
+		m.OutputBatchesFailedTotal.WithLabelValues("opensearch").Set(float64(failed))
+		m.OutputPendingDocs.WithLabelValues("opensearch").Set(float64(pending))
+		m.OutputPendingDroppedTotal.WithLabelValues("opensearch").Set(float64(dropped))
+	})
+}
+
 func isNonLoopbackAddr(addr string) bool {
 	host := addr
 	if h, _, err := net.SplitHostPort(addr); err == nil {

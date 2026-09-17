@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,6 +31,9 @@ const (
 	maxResponseBodyRead  = 1 << 20 // 1MB
 	shutdownFlushTimeout = 30 * time.Second
 )
+
+// maxPendingDocs bounds the in-memory retry queue (var so tests can shrink it).
+var maxPendingDocs = 10000
 
 type OpenSearchConfig struct {
 	Hosts         []string `mapstructure:"hosts"`
@@ -59,11 +63,16 @@ type OpenSearchWriter struct {
 	templateName  string
 	dashboardsURL string
 
-	buffer []json.RawMessage
-	mu     sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
+	buffer  []json.RawMessage
+	pending []json.RawMessage // docs whose last bulk failed, re-sent on later flushes
+	mu      sync.Mutex
+	ctx     context.Context
+	cancel  context.CancelFunc
+	done    chan struct{}
+
+	failedBatches  atomic.Int64
+	pendingDropped atomic.Int64
+	statsSink      atomic.Pointer[func(failedBatches int64, pendingDocs int, droppedDocs int64)]
 }
 
 func NewOpenSearchWriter(cfg OpenSearchConfig) (*OpenSearchWriter, error) {
@@ -203,36 +212,70 @@ func (ow *OpenSearchWriter) flushLoop() {
 	}
 }
 
+// finalFlush delivers whatever is left (retry queue + buffer) at shutdown.
+// Failure means a bounded, counted loss — it is reported, never silent.
 func (ow *OpenSearchWriter) finalFlush(ctx context.Context) error {
 	ow.mu.Lock()
-	if len(ow.buffer) == 0 {
-		ow.mu.Unlock()
-		return nil
-	}
+	pending := ow.pending
+	ow.pending = nil
 	batch := ow.buffer
 	ow.buffer = nil
 	ow.mu.Unlock()
 
-	return ow.sendBulkWithContext(ctx, batch)
-}
-
-func (ow *OpenSearchWriter) flush() error {
-	ow.mu.Lock()
-	if len(ow.buffer) == 0 {
-		ow.mu.Unlock()
+	docs := append(append([]json.RawMessage{}, pending...), batch...)
+	if len(docs) == 0 {
 		return nil
 	}
+
+	failed, err := ow.sendBulkWithContext(ctx, docs)
+	if len(failed) > 0 {
+		ow.pendingDropped.Add(int64(len(failed)))
+		ow.emitStats()
+		return fmt.Errorf("opensearch: final flush failed, %d docs not delivered: %w", len(failed), err)
+	}
+	return err
+}
+
+// flush first re-sends the retry queue; only when it is empty (or recovered)
+// does the current batch go out. Failed docs are re-queued, never discarded.
+func (ow *OpenSearchWriter) flush() error {
+	ow.mu.Lock()
+	pending := ow.pending
+	ow.pending = nil
 	batch := ow.buffer
 	ow.buffer = make([]json.RawMessage, 0, ow.bulkSize)
 	ow.mu.Unlock()
 
-	return ow.sendBulkWithContext(ow.ctx, batch)
+	if len(pending) > 0 {
+		failed, err := ow.sendBulkWithContext(ow.ctx, pending)
+		if len(failed) > 0 {
+			ow.countFailedBatch(err)
+			ow.enqueuePending(failed)
+			if len(batch) > 0 {
+				ow.enqueuePending(batch)
+			}
+			return err
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+	}
+
+	failed, err := ow.sendBulkWithContext(ow.ctx, batch)
+	if len(failed) > 0 {
+		ow.countFailedBatch(err)
+		ow.enqueuePending(failed)
+		return err
+	}
+	return err
 }
 
-func (ow *OpenSearchWriter) sendBulkWithContext(ctx context.Context, docs []json.RawMessage) error {
-	body := ow.buildBulkBody(docs)
-
+// sendBulkWithContext retries per maxRetries (whole set on total failure,
+// failed subset on per-item errors); returns the undelivered docs.
+func (ow *OpenSearchWriter) sendBulkWithContext(ctx context.Context, docs []json.RawMessage) ([]json.RawMessage, error) {
+	current := docs
 	var lastErr error
+
 	for attempt := range ow.maxRetries {
 		if attempt > 0 {
 			wait := time.Duration(math.Pow(2, float64(attempt-1))) * defaultRetryBaseWait
@@ -241,19 +284,84 @@ func (ow *OpenSearchWriter) sendBulkWithContext(ctx context.Context, docs []json
 			}
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("opensearch: bulk insert cancelled: %w", ctx.Err())
+				return current, fmt.Errorf("opensearch: bulk insert cancelled: %w", ctx.Err())
 			case <-time.After(wait):
 			}
 		}
 
-		err := ow.doRequest(ctx, body)
+		body := ow.buildBulkBody(current)
+		failed, err := ow.doRequest(ctx, body, current)
 		if err == nil {
-			return nil
+			if len(failed) == 0 {
+				return nil, nil
+			}
+			lastErr = fmt.Errorf("opensearch: %d doc(s) failed in bulk response", len(failed))
+			current = failed
+			continue
 		}
 		lastErr = err
 	}
 
-	return fmt.Errorf("opensearch: bulk insert failed after %d retries: %w", ow.maxRetries, lastErr)
+	return current, fmt.Errorf("opensearch: bulk insert failed after %d retries: %w", ow.maxRetries, lastErr)
+}
+
+func (ow *OpenSearchWriter) enqueuePending(docs []json.RawMessage) {
+	if len(docs) == 0 {
+		return
+	}
+	ow.mu.Lock()
+	ow.pending = append(ow.pending, docs...)
+	var dropped int64
+	for len(ow.pending) > maxPendingDocs {
+		ow.pending = ow.pending[1:]
+		dropped++
+	}
+	if dropped > 0 {
+		ow.pendingDropped.Add(dropped)
+	}
+	ow.mu.Unlock()
+
+	if dropped > 0 {
+		slog.Warn("opensearch: retry queue full, dropping oldest docs", "dropped", dropped, "total_dropped", ow.pendingDropped.Load())
+	}
+	ow.emitStats()
+}
+
+func (ow *OpenSearchWriter) countFailedBatch(err error) {
+	ow.failedBatches.Add(1)
+	ow.emitStats()
+	if err != nil {
+		slog.Error("opensearch bulk insert failed, docs queued for retry", "error", err)
+	}
+}
+
+func (ow *OpenSearchWriter) SetStatsSink(fn func(failedBatches int64, pendingDocs int, droppedDocs int64)) {
+	ow.statsSink.Store(&fn)
+}
+
+func (ow *OpenSearchWriter) emitStats() {
+	fnPtr := ow.statsSink.Load()
+	if fnPtr == nil {
+		return
+	}
+	ow.mu.Lock()
+	p := len(ow.pending)
+	ow.mu.Unlock()
+	(*fnPtr)(ow.failedBatches.Load(), p, ow.pendingDropped.Load())
+}
+
+func (ow *OpenSearchWriter) PendingDocs() int {
+	ow.mu.Lock()
+	defer ow.mu.Unlock()
+	return len(ow.pending)
+}
+
+func (ow *OpenSearchWriter) PendingDropped() int64 {
+	return ow.pendingDropped.Load()
+}
+
+func (ow *OpenSearchWriter) FailedBatches() int64 {
+	return ow.failedBatches.Load()
 }
 
 func (ow *OpenSearchWriter) buildBulkBody(docs []json.RawMessage) []byte {
@@ -280,13 +388,15 @@ func (ow *OpenSearchWriter) resolveIndex() string {
 	return index
 }
 
-func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
+// doRequest returns (failedDocs, nil) on per-item errors, (nil, err) on a
+// total failure, (nil, nil) on full success.
+func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte, docs []json.RawMessage) ([]json.RawMessage, error) {
 	host := ow.hosts[time.Now().UnixNano()%int64(len(ow.hosts))]
 	url := strings.TrimRight(host, "/") + "/_bulk"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/x-ndjson")
@@ -297,7 +407,7 @@ func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
 
 	resp, err := ow.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -305,17 +415,34 @@ func (ow *OpenSearchWriter) doRequest(ctx context.Context, body []byte) error {
 
 	if resp.StatusCode >= 400 {
 		_, _ = io.Copy(io.Discard, limitedBody)
-		return fmt.Errorf("opensearch bulk insert failed: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("opensearch bulk insert failed: HTTP %d", resp.StatusCode)
 	}
 
 	var bulkResp struct {
 		Errors bool `json:"errors"`
+		Items  []struct {
+			Index struct {
+				Status int `json:"status"`
+			} `json:"index"`
+		} `json:"items"`
 	}
-	if err := json.NewDecoder(limitedBody).Decode(&bulkResp); err == nil && bulkResp.Errors {
-		return fmt.Errorf("opensearch bulk response contains partial errors")
+	if err := json.NewDecoder(limitedBody).Decode(&bulkResp); err != nil {
+		return nil, fmt.Errorf("failed to decode bulk response: %w", err)
+	}
+	if !bulkResp.Errors {
+		return nil, nil
 	}
 
-	return nil
+	var failed []json.RawMessage
+	for i, item := range bulkResp.Items {
+		if item.Index.Status >= 300 && i < len(docs) {
+			failed = append(failed, docs[i])
+		}
+	}
+	if len(failed) == 0 {
+		return nil, nil
+	}
+	return failed, nil
 }
 
 func (ow *OpenSearchWriter) ensureIndexTemplate() error {
